@@ -79,6 +79,6 @@ Phases execute in numeric order: 1 -> 2 -> 3
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. GPU Pipeline & Visual Proof | 0/2 | Planned | - |
+| 1. GPU Pipeline & Visual Proof | 1/2 | In Progress|  |
 | 2. Road Network & Vehicle Models + egui | 0/3 | Not started | - |
 | 3. Motorbike Sublane & Pedestrians | 0/2 | Not started | - |

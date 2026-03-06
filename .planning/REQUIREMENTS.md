@@ -9,10 +9,10 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### GPU Compute & Foundation
 
-- [ ] **GPU-01**: GPU compute pipeline dispatches agent position/velocity updates each timestep via wgpu/Metal compute shaders using simple parallel dispatch
-- [ ] **GPU-02**: f64 arithmetic on CPU, f32 in WGSL shaders. No fixed-point types for POC
-- [ ] **GPU-03**: hecs ECS stores agent state as components, projected to SoA GPU buffers each frame via queue.write_buffer() with entity-to-GPU index mapping
-- [ ] **GPU-04**: CFL numerical stability check validates dt * max_speed < cell_size before each simulation step
+- [x] **GPU-01**: GPU compute pipeline dispatches agent position/velocity updates each timestep via wgpu/Metal compute shaders using simple parallel dispatch
+- [x] **GPU-02**: f64 arithmetic on CPU, f32 in WGSL shaders. No fixed-point types for POC
+- [x] **GPU-03**: hecs ECS stores agent state as components, projected to SoA GPU buffers each frame via queue.write_buffer() with entity-to-GPU index mapping
+- [x] **GPU-04**: CFL numerical stability check validates dt * max_speed < cell_size before each simulation step
 
 ### Rendering
 
@@ -56,8 +56,8 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Metrics & Performance
 
-- [ ] **PERF-01**: Frame time benchmark measures GPU dispatch + buffer readback duration per simulation step
-- [ ] **PERF-02**: Agent throughput metric tracks agents processed per second and GPU utilization percentage
+- [x] **PERF-01**: Frame time benchmark measures GPU dispatch + buffer readback duration per simulation step
+- [x] **PERF-02**: Agent throughput metric tracks agents processed per second and GPU utilization percentage
 
 ## v2 Requirements
 
@@ -138,16 +138,16 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| GPU-01 | Phase 1 | Pending |
-| GPU-02 | Phase 1 | Pending |
-| GPU-03 | Phase 1 | Pending |
-| GPU-04 | Phase 1 | Pending |
+| GPU-01 | Phase 1 | Complete |
+| GPU-02 | Phase 1 | Complete |
+| GPU-03 | Phase 1 | Complete |
+| GPU-04 | Phase 1 | Complete |
 | REN-01 | Phase 1 | Pending |
 | REN-02 | Phase 1 | Pending |
 | REN-03 | Phase 1 | Pending |
 | REN-04 | Phase 1 | Pending |
-| PERF-01 | Phase 1 | Pending |
-| PERF-02 | Phase 1 | Pending |
+| PERF-01 | Phase 1 | Complete |
+| PERF-02 | Phase 1 | Complete |
 | VEH-01 | Phase 2 | Pending |
 | VEH-02 | Phase 2 | Pending |
 | NET-01 | Phase 2 | Pending |

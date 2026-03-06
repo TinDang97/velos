@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: planning
-stopped_at: Project simplified, Phase 1 context revised
-last_updated: "2026-03-06T05:30:00.000Z"
-last_activity: 2026-03-06 -- Project simplified (5-phase to 3-phase, dropped fixed-point/CCH/meso-micro/wave-front)
+status: Ready to replan
+stopped_at: Completed 01-gpu-foundation-spikes-01-01-PLAN.md
+last_updated: "2026-03-06T08:32:50.388Z"
+last_activity: 2026-03-06 -- Project simplified (5-phase to 3-phase)
 progress:
   total_phases: 3
   completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
+  total_plans: 2
+  completed_plans: 1
   percent: 0
 ---
 
@@ -50,6 +50,7 @@ Progress: [░░░░░░░░░░] 0%
 - Trend: -
 
 *Updated after each plan completion*
+| Phase 01-gpu-foundation-spikes P01 | 9 | 2 tasks | 18 files |
 
 ## Accumulated Context
 
@@ -66,6 +67,9 @@ Recent decisions affecting current work:
 - [Simplification]: egui in Phase 2 -- controls when there's real simulation to control
 - [Simplification]: Styled + instanced rendering -- direction arrows, visible road lanes
 - [Roadmap]: 3 phases (down from 5): GPU+Visual -> Road+Vehicles+egui -> Motorbike+Pedestrian
+- [Phase 01-gpu-foundation-spikes]: wgpu 28 API: PollType::wait_indefinitely() replaces Maintain::Wait -- updated all GPU poll calls
+- [Phase 01-gpu-foundation-spikes]: GPU-01/02/03/04 all PASS on Metal: GO for Plan 02 (road graph + vehicle rendering)
+- [Phase 01-gpu-foundation-spikes]: BufferPool: all buffers use STORAGE|COPY_SRC|COPY_DST to support ECS upload + dispatch + readback pattern
 
 ### Pending Todos
 
@@ -79,6 +83,6 @@ Recent decisions affecting current work:
 
 ## Session Continuity
 
-Last session: 2026-03-06T05:30:00.000Z
-Stopped at: Project simplified, Phase 1 context revised
-Resume file: .planning/phases/01-gpu-foundation-spikes/01-CONTEXT.md
+Last session: 2026-03-06T08:32:50.386Z
+Stopped at: Completed 01-gpu-foundation-spikes-01-01-PLAN.md
+Resume file: None
