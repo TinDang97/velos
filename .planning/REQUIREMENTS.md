@@ -41,9 +41,9 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Demand
 
-- [ ] **DEM-01**: OD matrix loader reads origin-destination trip tables defining volumes between traffic zones
-- [ ] **DEM-02**: Time-of-day profiles shape demand across AM peak (7-9), PM peak (17-19), off-peak, and weekend patterns
-- [ ] **DEM-03**: Agent spawner generates agents from OD+ToD data, assigns vehicle type (80% motorbike, 15% car, 5% pedestrian), and injects into network at origins
+- [x] **DEM-01**: OD matrix loader reads origin-destination trip tables defining volumes between traffic zones
+- [x] **DEM-02**: Time-of-day profiles shape demand across AM peak (7-9), PM peak (17-19), off-peak, and weekend patterns
+- [x] **DEM-03**: Agent spawner generates agents from OD+ToD data, assigns vehicle type (80% motorbike, 15% car, 5% pedestrian), and injects into network at origins
 
 ### Gridlock Detection
 
@@ -155,9 +155,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 | NET-03 | Phase 2 | Complete |
 | NET-04 | Phase 2 | Pending |
 | RTE-01 | Phase 2 | Pending |
-| DEM-01 | Phase 2 | Pending |
-| DEM-02 | Phase 2 | Pending |
-| DEM-03 | Phase 2 | Pending |
+| DEM-01 | Phase 2 | Complete |
+| DEM-02 | Phase 2 | Complete |
+| DEM-03 | Phase 2 | Complete |
 | GRID-01 | Phase 2 | Complete |
 | APP-01 | Phase 2 | Pending |
 | APP-02 | Phase 2 | Pending |

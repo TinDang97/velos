@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: completed
-stopped_at: Completed 02-02-PLAN.md
-last_updated: "2026-03-06T14:39:33.202Z"
-last_activity: "2026-03-06 -- Plan 02 complete: winit window + GPU-instanced renderer + camera controls"
+status: in-progress
+stopped_at: Completed 02-03-PLAN.md
+last_updated: "2026-03-06T14:38:57Z"
+last_activity: "2026-03-06 -- Plan 03 complete: OD matrix + ToD profiles + agent spawner (80/15/5)"
 progress:
   total_phases: 3
   completed_phases: 1
   total_plans: 6
-  completed_plans: 3
-  percent: 100
+  completed_plans: 4
+  percent: 67
 ---
 
 # Project State
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-06)
 
 **Core value:** Motorbikes move realistically through traffic using continuous sublane positioning -- not forced into discrete lanes like Western traffic models
-**Current focus:** Phase 1: GPU Pipeline & Visual Proof
+**Current focus:** Phase 2: Road Network & Vehicle Models + egui
 
 ## Current Position
 
-Phase: 1 of 3 (GPU Pipeline & Visual Proof)
-Plan: 2 of 2 (COMPLETE)
-Status: Phase 01 Complete - GO for Phase 02
-Last activity: 2026-03-06 -- Plan 02 complete: winit window + GPU-instanced renderer + camera controls
+Phase: 2 of 3 (Road Network & Vehicle Models + egui)
+Plan: 3 of 4 (COMPLETE)
+Status: Plan 02-03 complete -- demand generation crate ready
+Last activity: 2026-03-06 -- Plan 03 complete: OD matrix + ToD profiles + agent spawner (80/15/5)
 
-Progress: [██████████] 100% (Phase 01)
+Progress: [██████░░░░] 67% (Overall)
 
 ## Performance Metrics
 
@@ -55,7 +55,8 @@ Progress: [██████████] 100% (Phase 01)
 |-------|------|----------|-------|-------|
 | 01-gpu-foundation-spikes | P01 | 9min | 4 tasks | 18 files |
 | 01-gpu-foundation-spikes | P02 | 19min | 2 tasks + 1 fix | 8 files |
-| Phase 02-road-network-vehicle-models-egui P02 | 5min | 2 tasks | 15 files |
+| 02-road-network-vehicle-models-egui | P02 | 5min | 2 tasks | 15 files |
+| 02-road-network-vehicle-models-egui | P03 | 6min | 2 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -80,10 +81,13 @@ Recent decisions affecting current work:
 - [Phase 01-gpu-foundation-spikes P02]: Phase 01 GO -- all REN-01 through REN-04 verified on Metal; proceed to Phase 02
 - [Phase 02]: BFS visited-set for gridlock detection over Tarjan SCC -- simpler, sufficient at POC scale
 - [Phase 02]: Pure CPU math models (IDM/MOBIL/signal) with f64 precision, zero external deps beyond thiserror/log
+- [Phase 02 P03]: SpawnVehicleType local enum in velos-demand to avoid circular dep with velos-vehicle
+- [Phase 02 P03]: Bernoulli fractional spawning for sub-1.0 expected counts (no systematic undercounting)
+- [Phase 02 P03]: gen_range(0.0..1.0) for Rust 2024 edition compatibility (gen is reserved keyword)
 
 ### Pending Todos
 
-- Phase 01 COMPLETE. Begin Phase 02: Road Graph + Vehicle Simulation + egui controls.
+- Plan 02-04 (integration): wire demand spawner + vehicle models + road graph + egui sidebar
 
 ### Blockers/Concerns
 
@@ -92,6 +96,6 @@ Recent decisions affecting current work:
 
 ## Session Continuity
 
-Last session: 2026-03-06T14:39:33.200Z
-Stopped at: Completed 02-02-PLAN.md
-Resume file: None
+Last session: 2026-03-06T14:38:57Z
+Stopped at: Completed 02-03-PLAN.md
+Resume file: .planning/phases/02-road-network-vehicle-models-egui/02-03-SUMMARY.md
