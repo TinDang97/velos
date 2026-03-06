@@ -24,3 +24,12 @@ glam = { workspace = true }
 pollster = { workspace = true }
 env_logger = { workspace = true }
 winit = { workspace = true }
+egui = { workspace = true }
+egui-wgpu = { workspace = true }
+egui-winit = { workspace = true }
+velos-net = { path = "../velos-net" }
+velos-vehicle = { path = "../velos-vehicle" }
+velos-demand = { path = "../velos-demand" }
+velos-signal = { path = "../velos-signal" }
+rand = { workspace = true }
+petgraph = { workspace = true }

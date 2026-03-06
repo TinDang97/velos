@@ -1,12 +1,12 @@
-//! Instanced 2D agent renderer.
+//! Instanced 2D agent renderer with per-type shape geometry.
 //!
-//! One render pipeline serves all agent types. Each shape type (triangle, dot)
-//! gets its own draw call (REN-04). Phase 1 uses only triangles for all agents.
+//! One render pipeline serves all agent types. Each shape type (triangle,
+//! rectangle, dot) gets its own draw call with a distinct vertex buffer.
 //!
 //! Frame usage:
 //!   1. update_camera(queue, camera) -- upload projection matrix
-//!   2. update_instances_from_cpu(queue, positions, headings) -- build AgentInstance array
-//!   3. render_frame(encoder, view, instance_count) -- record draw call
+//!   2. update_instances_typed(queue, motorbikes, cars, pedestrians) -- build per-type arrays
+//!   3. render_frame(encoder, view) -- record per-type draw calls
 
 use crate::camera::Camera2D;
 use bytemuck::{Pod, Zeroable};
@@ -77,22 +77,59 @@ struct ShapeVertex {
     local_pos: [f32; 2],
 }
 
-/// Triangle vertices for a motorbike/agent shape in local space.
-/// Points forward (east, +x direction). Scale: ~2 metres long, 1 metre wide.
+/// Triangle vertices for a motorbike shape in local space.
+/// Points forward (east, +x direction). Scale: ~2m long, 1m wide.
 const TRIANGLE_VERTICES: &[ShapeVertex] = &[
     ShapeVertex { local_pos: [2.0, 0.0] },   // nose (forward)
     ShapeVertex { local_pos: [-1.0, 0.8] },  // left rear
     ShapeVertex { local_pos: [-1.0, -0.8] }, // right rear
 ];
 
-/// Instanced 2D renderer.
+/// Rectangle vertices for a car shape in local space.
+/// Two triangles forming a ~3m long, 1.5m wide rectangle, centered.
+const RECTANGLE_VERTICES: &[ShapeVertex] = &[
+    // First triangle (top-left)
+    ShapeVertex { local_pos: [-1.5, 0.75] },
+    ShapeVertex { local_pos: [1.5, 0.75] },
+    ShapeVertex { local_pos: [1.5, -0.75] },
+    // Second triangle (bottom-right)
+    ShapeVertex { local_pos: [-1.5, 0.75] },
+    ShapeVertex { local_pos: [1.5, -0.75] },
+    ShapeVertex { local_pos: [-1.5, -0.75] },
+];
+
+/// Dot/diamond vertices for a pedestrian shape in local space.
+/// Two triangles forming a ~0.8m diamond, centered.
+const DOT_VERTICES: &[ShapeVertex] = &[
+    // First triangle (top)
+    ShapeVertex { local_pos: [0.0, 0.4] },
+    ShapeVertex { local_pos: [0.4, 0.0] },
+    ShapeVertex { local_pos: [-0.4, 0.0] },
+    // Second triangle (bottom)
+    ShapeVertex { local_pos: [0.0, -0.4] },
+    ShapeVertex { local_pos: [0.4, 0.0] },
+    ShapeVertex { local_pos: [-0.4, 0.0] },
+];
+
+/// Per-type instance counts for draw call ranges.
+#[derive(Default, Clone, Copy)]
+struct TypeCounts {
+    motorbike_count: u32,
+    car_count: u32,
+    pedestrian_count: u32,
+}
+
+/// Instanced 2D renderer with per-type shape geometry.
 pub struct Renderer {
     render_pipeline: wgpu::RenderPipeline,
     camera_bind_group: wgpu::BindGroup,
     camera_uniform_buffer: wgpu::Buffer,
-    shape_vertex_buffer: wgpu::Buffer,
+    triangle_vertex_buffer: wgpu::Buffer,
+    rectangle_vertex_buffer: wgpu::Buffer,
+    dot_vertex_buffer: wgpu::Buffer,
     instance_buffer: wgpu::Buffer,
     instance_capacity: u32,
+    type_counts: TypeCounts,
     pub surface_format: wgpu::TextureFormat,
 }
 
@@ -184,14 +221,28 @@ impl Renderer {
                 cache: None,
             });
 
-        let shape_vertex_buffer =
+        let triangle_vertex_buffer =
             device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("shape_vertices"),
+                label: Some("triangle_vertices"),
                 contents: bytemuck::cast_slice(TRIANGLE_VERTICES),
                 usage: wgpu::BufferUsages::VERTEX,
             });
 
-        let instance_capacity = 2048_u32;
+        let rectangle_vertex_buffer =
+            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("rectangle_vertices"),
+                contents: bytemuck::cast_slice(RECTANGLE_VERTICES),
+                usage: wgpu::BufferUsages::VERTEX,
+            });
+
+        let dot_vertex_buffer =
+            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("dot_vertices"),
+                contents: bytemuck::cast_slice(DOT_VERTICES),
+                usage: wgpu::BufferUsages::VERTEX,
+            });
+
+        let instance_capacity = 8192_u32;
         let instance_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("instance_buffer"),
             size: (instance_capacity as usize * std::mem::size_of::<AgentInstance>()) as u64,
@@ -203,9 +254,12 @@ impl Renderer {
             render_pipeline,
             camera_bind_group,
             camera_uniform_buffer,
-            shape_vertex_buffer,
+            triangle_vertex_buffer,
+            rectangle_vertex_buffer,
+            dot_vertex_buffer,
             instance_buffer,
             instance_capacity,
+            type_counts: TypeCounts::default(),
             surface_format,
         }
     }
@@ -223,11 +277,53 @@ impl Renderer {
         );
     }
 
+    /// Update instance buffer with per-type agent arrays.
+    ///
+    /// Instances are packed contiguously: [motorbikes | cars | pedestrians].
+    /// Draw calls use offset ranges to select the shape vertex buffer per type.
+    pub fn update_instances_typed(
+        &mut self,
+        queue: &wgpu::Queue,
+        motorbikes: &[AgentInstance],
+        cars: &[AgentInstance],
+        pedestrians: &[AgentInstance],
+    ) {
+        let total = motorbikes.len() + cars.len() + pedestrians.len();
+        let count = total.min(self.instance_capacity as usize);
+
+        self.type_counts = TypeCounts {
+            motorbike_count: motorbikes.len().min(count) as u32,
+            car_count: cars.len().min(count.saturating_sub(motorbikes.len())) as u32,
+            pedestrian_count: pedestrians
+                .len()
+                .min(count.saturating_sub(motorbikes.len() + cars.len()))
+                as u32,
+        };
+
+        // Build packed buffer
+        let mut all_instances = Vec::with_capacity(count);
+        all_instances.extend_from_slice(
+            &motorbikes[..self.type_counts.motorbike_count as usize],
+        );
+        all_instances
+            .extend_from_slice(&cars[..self.type_counts.car_count as usize]);
+        all_instances.extend_from_slice(
+            &pedestrians[..self.type_counts.pedestrian_count as usize],
+        );
+
+        if !all_instances.is_empty() {
+            queue.write_buffer(
+                &self.instance_buffer,
+                0,
+                bytemuck::cast_slice(&all_instances),
+            );
+        }
+    }
+
     /// Rebuild the instance buffer from CPU-side position and heading arrays.
-    /// Reads positions and headings directly -- no GPU readback needed.
-    /// Phase 1: practical for 1K agents.
+    /// Compatibility fallback: all agents rendered as green triangles.
     pub fn update_instances_from_cpu(
-        &self,
+        &mut self,
         queue: &wgpu::Queue,
         positions: &[[f32; 2]],
         headings: &[f32],
@@ -238,9 +334,15 @@ impl Renderer {
                 position: positions[i],
                 heading: headings[i],
                 _pad: 0.0,
-                color: [0.2, 0.8, 0.4, 1.0], // green triangles for Phase 1
+                color: [0.2, 0.8, 0.4, 1.0],
             })
             .collect();
+
+        self.type_counts = TypeCounts {
+            motorbike_count: count as u32,
+            car_count: 0,
+            pedestrian_count: 0,
+        };
 
         if !instances.is_empty() {
             queue.write_buffer(
@@ -251,13 +353,16 @@ impl Renderer {
         }
     }
 
-    /// Record the render pass into the encoder.
-    /// Draws triangles shape type as one instanced draw call (REN-04).
+    /// Record the render pass with per-type draw calls.
+    ///
+    /// Issues 3 draw calls, one per shape type:
+    /// 1. Triangle vertex buffer for motorbike instances
+    /// 2. Rectangle vertex buffer for car instances
+    /// 3. Dot vertex buffer for pedestrian instances
     pub fn render_frame(
         &self,
         encoder: &mut wgpu::CommandEncoder,
         view: &wgpu::TextureView,
-        instance_count: u32,
     ) {
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("agent_render_pass"),
@@ -281,9 +386,45 @@ impl Renderer {
 
         pass.set_pipeline(&self.render_pipeline);
         pass.set_bind_group(0, &self.camera_bind_group, &[]);
-        pass.set_vertex_buffer(0, self.shape_vertex_buffer.slice(..));
         pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
-        // REN-04: one draw call for triangles (motorbikes + cars in Phase 1)
-        pass.draw(0..TRIANGLE_VERTICES.len() as u32, 0..instance_count);
+
+        let tc = &self.type_counts;
+        let mut instance_offset = 0u32;
+
+        // Draw motorbikes as triangles
+        if tc.motorbike_count > 0 {
+            pass.set_vertex_buffer(0, self.triangle_vertex_buffer.slice(..));
+            pass.draw(
+                0..TRIANGLE_VERTICES.len() as u32,
+                instance_offset..instance_offset + tc.motorbike_count,
+            );
+            instance_offset += tc.motorbike_count;
+        }
+
+        // Draw cars as rectangles
+        if tc.car_count > 0 {
+            pass.set_vertex_buffer(0, self.rectangle_vertex_buffer.slice(..));
+            pass.draw(
+                0..RECTANGLE_VERTICES.len() as u32,
+                instance_offset..instance_offset + tc.car_count,
+            );
+            instance_offset += tc.car_count;
+        }
+
+        // Draw pedestrians as dots/diamonds
+        if tc.pedestrian_count > 0 {
+            pass.set_vertex_buffer(0, self.dot_vertex_buffer.slice(..));
+            pass.draw(
+                0..DOT_VERTICES.len() as u32,
+                instance_offset..instance_offset + tc.pedestrian_count,
+            );
+        }
+    }
+
+    /// Total instance count across all types.
+    pub fn total_instance_count(&self) -> u32 {
+        self.type_counts.motorbike_count
+            + self.type_counts.car_count
+            + self.type_counts.pedestrian_count
     }
 }

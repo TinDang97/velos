@@ -212,6 +212,8 @@ impl GpuState {
             .update_instances_from_cpu(&self.queue, &positions, &headings);
 
         self.frame_count += 1;
+        #[allow(clippy::let_underscore_must_use)]
+        let _ = self.frame_count; // suppress unused warning
     }
 
     fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
@@ -224,7 +226,6 @@ impl GpuState {
         self.renderer.render_frame(
             &mut encoder,
             &view,
-            self.buffer_pool.agent_count,
         );
 
         self.queue.submit(std::iter::once(encoder.finish()));
