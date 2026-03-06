@@ -27,7 +27,7 @@ struct GpuState {
     surface_config: wgpu::SurfaceConfiguration,
     device: wgpu::Device,
     queue: wgpu::Queue,
-    adapter: wgpu::Adapter,
+    _adapter: wgpu::Adapter,
     renderer: Renderer,
     camera: Camera2D,
     sim: SimWorld,
@@ -85,7 +85,7 @@ impl GpuState {
         };
         surface.configure(&device, &surface_config);
 
-        let renderer = Renderer::new(&device, format);
+        let mut renderer = Renderer::new(&device, format);
 
         // Load road graph.
         let pbf_path = std::path::Path::new("data/hcmc/district1.osm.pbf");
@@ -110,11 +110,15 @@ impl GpuState {
         };
 
         let sim = SimWorld::new(road_graph);
+        let road_lines = sim.road_edge_lines();
         let (cx, cy) = sim.network_center();
 
         let mut camera = Camera2D::new(Vec2::new(size.width as f32, size.height as f32));
         camera.center = Vec2::new(cx, cy);
         camera.zoom = 0.5; // Start zoomed out to see the network.
+
+        // Upload road network lines for rendering.
+        renderer.upload_road_lines(&device, &road_lines);
 
         // Initialize egui.
         let egui_ctx = egui::Context::default();
@@ -135,7 +139,7 @@ impl GpuState {
             surface_config,
             device,
             queue,
-            adapter,
+            _adapter: adapter,
             renderer,
             camera,
             sim,
@@ -164,7 +168,9 @@ impl GpuState {
         self.sim.metrics.frame_time_ms = frame_dt * 1000.0;
 
         let base_dt = 0.016_f64; // ~60 FPS base timestep
-        let (motorbikes, cars, pedestrians) = self.sim.tick(base_dt);
+        let (motorbikes, cars, mut pedestrians) = self.sim.tick(base_dt);
+        // Append signal indicators as dot-shaped instances.
+        pedestrians.extend(self.sim.build_signal_indicators());
         self.renderer
             .update_instances_typed(&self.queue, &motorbikes, &cars, &pedestrians);
     }
@@ -214,7 +220,10 @@ impl GpuState {
                     ui.heading("Metrics");
                     let m = &sim.metrics;
                     ui.label(format!("Frame: {:.1}ms", m.frame_time_ms));
-                    ui.label(format!("Sim time: {:.0}s", m.sim_time));
+                    let hours = (m.sim_time / 3600.0) as u32;
+                    let mins = ((m.sim_time % 3600.0) / 60.0) as u32;
+                    let secs = (m.sim_time % 60.0) as u32;
+                    ui.label(format!("Time: {:02}:{:02}:{:02}", hours, mins, secs));
                     ui.label(format!("Agents: {}", m.agent_count));
                     ui.label(format!("  Motorbikes: {}", m.motorbike_count));
                     ui.label(format!("  Cars: {}", m.car_count));

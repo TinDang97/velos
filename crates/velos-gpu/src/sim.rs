@@ -9,6 +9,7 @@ use std::collections::HashMap;
 use hecs::{Entity, World};
 use petgraph::graph::{EdgeIndex, NodeIndex};
 use petgraph::visit::EdgeRef;
+use petgraph::Direction;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 
@@ -48,15 +49,33 @@ pub struct SimMetrics {
     pub sim_time: f64,
 }
 
-/// Zone centroid positions in projected metres (approximate District 1 landmarks).
-fn zone_centroid(zone: Zone) -> [f64; 2] {
-    match zone {
-        Zone::BenThanh => [0.0, 0.0],
-        Zone::NguyenHue => [200.0, 300.0],
-        Zone::Bitexco => [150.0, -100.0],
-        Zone::BuiVien => [-400.0, -200.0],
-        Zone::Waterfront => [500.0, -400.0],
+/// Zone centroid positions derived from road network bounding box.
+/// Distributes 5 zones across the actual network extent.
+fn zone_centroids_from_graph(graph: &RoadGraph) -> HashMap<Zone, [f64; 2]> {
+    let g = graph.inner();
+    let mut min_x = f64::MAX;
+    let mut max_x = f64::MIN;
+    let mut min_y = f64::MAX;
+    let mut max_y = f64::MIN;
+    for node in g.node_indices() {
+        let p = g[node].pos;
+        min_x = min_x.min(p[0]);
+        max_x = max_x.max(p[0]);
+        min_y = min_y.min(p[1]);
+        max_y = max_y.max(p[1]);
     }
+    let cx = (min_x + max_x) / 2.0;
+    let cy = (min_y + max_y) / 2.0;
+    let w = (max_x - min_x) * 0.3; // 30% offset from center
+    let h = (max_y - min_y) * 0.3;
+
+    let mut m = HashMap::new();
+    m.insert(Zone::BenThanh, [cx, cy]);                // center
+    m.insert(Zone::NguyenHue, [cx + w, cy + h]);       // NE
+    m.insert(Zone::Bitexco, [cx + w, cy - h]);          // SE
+    m.insert(Zone::BuiVien, [cx - w, cy - h]);          // SW
+    m.insert(Zone::Waterfront, [cx - w, cy + h]);       // NW
+    m
 }
 
 /// Holds all simulation subsystems.
@@ -72,21 +91,40 @@ pub struct SimWorld {
     pub metrics: SimMetrics,
     rng: StdRng,
     signalized_nodes: HashMap<u32, Vec<EdgeIndex>>,
+    zone_centroids: HashMap<Zone, [f64; 2]>,
 }
 
 impl SimWorld {
     /// Initialize simulation with road graph loaded from PBF.
+    /// Morning rush hour start: 7:00 AM in seconds.
+    const MORNING_RUSH_SECS: f64 = 7.0 * 3600.0;
+
+    /// Create a boosted OD matrix (~10x base) for visible demo density.
+    fn boosted_od() -> OdMatrix {
+        let mut od = OdMatrix::district1_poc();
+        // Boost all existing trips by 10x for visible agent density.
+        let pairs: Vec<_> = od.zone_pairs().collect();
+        for (from, to, count) in pairs {
+            od.set_trips(from, to, count * 10);
+        }
+        od
+    }
+
     pub fn new(road_graph: RoadGraph) -> Self {
-        let spawner = Spawner::new(OdMatrix::district1_poc(), TodProfile::hcmc_weekday(), 42);
+        let zone_centroids = zone_centroids_from_graph(&road_graph);
+        let spawner = Spawner::new(Self::boosted_od(), TodProfile::hcmc_weekday(), 42);
 
         let mut signal_controllers = Vec::new();
         let mut signalized_nodes = HashMap::new();
         let g = road_graph.inner();
         for node_idx in g.node_indices() {
-            let degree = g.edges(node_idx).count();
-            if degree >= 4 {
-                let approaches: Vec<usize> = (0..degree).collect();
-                let half = degree / 2;
+            // Count incoming edges — these are the approaches vehicles arrive from.
+            let in_degree = g
+                .edges_directed(node_idx, Direction::Incoming)
+                .count();
+            if in_degree >= 4 {
+                let approaches: Vec<usize> = (0..in_degree).collect();
+                let half = in_degree / 2;
                 let phase_a = SignalPhase {
                     green_duration: 30.0,
                     amber_duration: 3.0,
@@ -98,10 +136,13 @@ impl SimWorld {
                     approaches: approaches[half..].to_vec(),
                 };
                 let plan = SignalPlan::new(vec![phase_a, phase_b]);
-                let controller = FixedTimeController::new(plan, degree);
+                let controller = FixedTimeController::new(plan, in_degree);
                 signal_controllers.push((node_idx, controller));
 
-                let edges: Vec<EdgeIndex> = g.edges(node_idx).map(|e| e.id()).collect();
+                let edges: Vec<EdgeIndex> = g
+                    .edges_directed(node_idx, Direction::Incoming)
+                    .map(|e| e.id())
+                    .collect();
                 signalized_nodes.insert(node_idx.index() as u32, edges);
             }
         }
@@ -117,23 +158,24 @@ impl SimWorld {
             spawner,
             signal_controllers,
             gridlock_timeout: 300.0,
-            sim_time: 0.0,
+            sim_time: Self::MORNING_RUSH_SECS,
             sim_state: SimState::Stopped,
-            speed_mult: 1.0,
+            speed_mult: 2.0,
             metrics: SimMetrics::default(),
             rng: StdRng::seed_from_u64(123),
             signalized_nodes,
+            zone_centroids,
         }
     }
 
     /// Reset the simulation to initial state.
     pub fn reset(&mut self) {
         self.world.clear();
-        self.sim_time = 0.0;
+        self.sim_time = Self::MORNING_RUSH_SECS;
         self.sim_state = SimState::Stopped;
         self.metrics = SimMetrics::default();
         self.rng = StdRng::seed_from_u64(123);
-        self.spawner = Spawner::new(OdMatrix::district1_poc(), TodProfile::hcmc_weekday(), 42);
+        self.spawner = Spawner::new(Self::boosted_od(), TodProfile::hcmc_weekday(), 42);
         for (_, ctrl) in &mut self.signal_controllers {
             ctrl.reset();
         }
@@ -171,11 +213,12 @@ impl SimWorld {
     }
 
     fn spawn_single_agent(&mut self, req: &velos_demand::SpawnRequest) {
-        let origin_pos = zone_centroid(req.origin);
-        let dest_pos = zone_centroid(req.destination);
+        let origin_pos = self.zone_centroids.get(&req.origin).copied().unwrap_or([0.0, 0.0]);
+        let dest_pos = self.zone_centroids.get(&req.destination).copied().unwrap_or([0.0, 0.0]);
 
-        let from_node = self.nearest_node(origin_pos);
-        let to_node = self.nearest_node(dest_pos);
+        // Pick random nodes within 300m of zone centroids for spawn diversity.
+        let from_node = self.random_node_near(origin_pos, 300.0);
+        let to_node = self.random_node_near(dest_pos, 300.0);
 
         if from_node == to_node {
             return;
@@ -248,21 +291,39 @@ impl SimWorld {
         ));
     }
 
-    fn nearest_node(&self, pos: [f64; 2]) -> NodeIndex {
+    /// Pick a random node within `radius` metres of `pos`. Falls back to nearest if none found.
+    fn random_node_near(&mut self, pos: [f64; 2], radius: f64) -> NodeIndex {
         let g = self.road_graph.inner();
-        let mut best = NodeIndex::new(0);
-        let mut best_dist = f64::MAX;
-        for node in g.node_indices() {
-            let np = g[node].pos;
-            let dx = np[0] - pos[0];
-            let dy = np[1] - pos[1];
-            let dist = dx * dx + dy * dy;
-            if dist < best_dist {
-                best_dist = dist;
-                best = node;
+        let r2 = radius * radius;
+        let candidates: Vec<NodeIndex> = g
+            .node_indices()
+            .filter(|n| {
+                let np = g[*n].pos;
+                let dx = np[0] - pos[0];
+                let dy = np[1] - pos[1];
+                dx * dx + dy * dy <= r2
+            })
+            .collect();
+
+        if candidates.is_empty() {
+            // Fallback: nearest node
+            let mut best = NodeIndex::new(0);
+            let mut best_dist = f64::MAX;
+            for node in g.node_indices() {
+                let np = g[node].pos;
+                let dx = np[0] - pos[0];
+                let dy = np[1] - pos[1];
+                let dist = dx * dx + dy * dy;
+                if dist < best_dist {
+                    best_dist = dist;
+                    best = node;
+                }
             }
+            best
+        } else {
+            let idx = self.rng.gen_range(0..candidates.len());
+            candidates[idx]
         }
-        best
     }
 
     fn step_signals(&mut self, dt: f64) {
@@ -334,14 +395,23 @@ impl SimWorld {
                 .unwrap_or(100.0);
 
             if new_offset >= edge_length {
-                self.advance_to_next_edge(entity, new_offset - edge_length);
+                if at_red {
+                    // Clamp at end of edge — do NOT cross a red signal.
+                    let rp_q = self.world.query_one_mut::<&mut RoadPosition>(entity).unwrap();
+                    rp_q.offset_m = edge_length - 0.1;
+                    self.update_agent_state(entity, 0.0);
+                    self.update_wait_state(entity, 0.0, true);
+                } else {
+                    self.advance_to_next_edge(entity, new_offset - edge_length);
+                    self.update_agent_state(entity, v_new);
+                    self.update_wait_state(entity, v_new, false);
+                }
             } else {
                 let rp_q = self.world.query_one_mut::<&mut RoadPosition>(entity).unwrap();
                 rp_q.offset_m = new_offset;
+                self.update_agent_state(entity, v_new);
+                self.update_wait_state(entity, v_new, at_red);
             }
-
-            self.update_agent_state(entity, v_new);
-            self.update_wait_state(entity, v_new, at_red);
         }
     }
 
@@ -359,7 +429,8 @@ impl SimWorld {
             .map(|e| e.length_m)
             .unwrap_or(100.0);
 
-        if rp.offset_m < edge_length - 10.0 {
+        // Only check signal when agent is within 15m of the intersection.
+        if rp.offset_m < edge_length - 15.0 {
             return false;
         }
 
@@ -370,13 +441,16 @@ impl SimWorld {
 
         for (ctrl_node, ctrl) in &self.signal_controllers {
             if *ctrl_node == target_node {
-                let edges_at_node: Vec<_> = g.edges(target_node).collect();
-                for (approach_idx, edge_ref) in edges_at_node.iter().enumerate() {
+                // Use INCOMING edges to match the agent's approach direction.
+                let incoming: Vec<_> =
+                    g.edges_directed(target_node, Direction::Incoming).collect();
+                for (approach_idx, edge_ref) in incoming.iter().enumerate() {
                     if edge_ref.id() == edge_idx {
                         return ctrl.get_phase_state(approach_idx) == PhaseState::Red;
                     }
                 }
-                return true;
+                // Approach not found in this controller's incoming edges — allow through.
+                return false;
             }
         }
         false
@@ -698,6 +772,62 @@ impl SimWorld {
         }
 
         (motorbikes, cars, pedestrians)
+    }
+
+    /// Build signal indicator instances for rendering at signalized intersections.
+    /// Returns dot-shaped instances colored red, amber, or green based on current state.
+    pub fn build_signal_indicators(&self) -> Vec<AgentInstance> {
+        let g = self.road_graph.inner();
+        let mut indicators = Vec::new();
+
+        for (ctrl_node, ctrl) in &self.signal_controllers {
+            let node_pos = g[*ctrl_node].pos;
+            let incoming: Vec<_> =
+                g.edges_directed(*ctrl_node, Direction::Incoming).collect();
+
+            for (approach_idx, edge_ref) in incoming.iter().enumerate() {
+                let state = ctrl.get_phase_state(approach_idx);
+                let color = match state {
+                    PhaseState::Green => [0.0, 1.0, 0.0, 1.0],
+                    PhaseState::Amber => [1.0, 0.8, 0.0, 1.0],
+                    PhaseState::Red => [1.0, 0.0, 0.0, 1.0],
+                };
+
+                // Place indicator slightly offset along the incoming edge direction.
+                let source_pos = g[edge_ref.source()].pos;
+                let dx = node_pos[0] - source_pos[0];
+                let dy = node_pos[1] - source_pos[1];
+                let dist = (dx * dx + dy * dy).sqrt().max(1.0);
+                let offset = 8.0; // metres back from intersection center
+                let ix = node_pos[0] - dx / dist * offset;
+                let iy = node_pos[1] - dy / dist * offset;
+
+                indicators.push(AgentInstance {
+                    position: [ix as f32, iy as f32],
+                    heading: 0.0,
+                    _pad: 0.0,
+                    color,
+                });
+            }
+        }
+
+        indicators
+    }
+
+    /// Extract road edge line segments for rendering (start, end pairs in metres).
+    pub fn road_edge_lines(&self) -> Vec<([f32; 2], [f32; 2])> {
+        let g = self.road_graph.inner();
+        let mut lines = Vec::with_capacity(g.edge_count());
+        for edge in g.edge_weights() {
+            let geom = &edge.geometry;
+            for w in geom.windows(2) {
+                lines.push((
+                    [w[0][0] as f32, w[0][1] as f32],
+                    [w[1][0] as f32, w[1][1] as f32],
+                ));
+            }
+        }
+        lines
     }
 
     /// Compute bounding box center of the road network for initial camera.

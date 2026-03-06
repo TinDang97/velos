@@ -111,6 +111,14 @@ const DOT_VERTICES: &[ShapeVertex] = &[
     ShapeVertex { local_pos: [-0.4, 0.0] },
 ];
 
+/// Road line vertex: position + color.
+#[repr(C)]
+#[derive(Copy, Clone, Pod, Zeroable)]
+struct RoadLineVertex {
+    position: [f32; 2],
+    color: [f32; 4],
+}
+
 /// Per-type instance counts for draw call ranges.
 #[derive(Default, Clone, Copy)]
 struct TypeCounts {
@@ -119,9 +127,10 @@ struct TypeCounts {
     pedestrian_count: u32,
 }
 
-/// Instanced 2D renderer with per-type shape geometry.
+/// Instanced 2D renderer with per-type shape geometry and road line overlay.
 pub struct Renderer {
     render_pipeline: wgpu::RenderPipeline,
+    road_pipeline: wgpu::RenderPipeline,
     camera_bind_group: wgpu::BindGroup,
     camera_uniform_buffer: wgpu::Buffer,
     triangle_vertex_buffer: wgpu::Buffer,
@@ -130,6 +139,8 @@ pub struct Renderer {
     instance_buffer: wgpu::Buffer,
     instance_capacity: u32,
     type_counts: TypeCounts,
+    road_vertex_buffer: Option<wgpu::Buffer>,
+    road_vertex_count: u32,
     pub surface_format: wgpu::TextureFormat,
 }
 
@@ -175,6 +186,58 @@ impl Renderer {
                 label: Some("render_pipeline_layout"),
                 bind_group_layouts: &[&camera_bind_group_layout],
                 push_constant_ranges: &[],
+            });
+
+        // Road line pipeline (LineList topology, same camera bind group).
+        let road_shader =
+            device.create_shader_module(wgpu::include_wgsl!("../shaders/road_line.wgsl"));
+        let road_vertex_layout = wgpu::VertexBufferLayout {
+            array_stride: std::mem::size_of::<RoadLineVertex>() as u64,
+            step_mode: wgpu::VertexStepMode::Vertex,
+            attributes: &[
+                wgpu::VertexAttribute {
+                    offset: 0,
+                    shader_location: 0,
+                    format: wgpu::VertexFormat::Float32x2,
+                },
+                wgpu::VertexAttribute {
+                    offset: 8,
+                    shader_location: 1,
+                    format: wgpu::VertexFormat::Float32x4,
+                },
+            ],
+        };
+        let road_pipeline =
+            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some("road_line_pipeline"),
+                layout: Some(&pipeline_layout),
+                vertex: wgpu::VertexState {
+                    module: &road_shader,
+                    entry_point: Some("vs_main"),
+                    buffers: &[road_vertex_layout],
+                    compilation_options: Default::default(),
+                },
+                fragment: Some(wgpu::FragmentState {
+                    module: &road_shader,
+                    entry_point: Some("fs_main"),
+                    targets: &[Some(wgpu::ColorTargetState {
+                        format: surface_format,
+                        blend: Some(wgpu::BlendState::REPLACE),
+                        write_mask: wgpu::ColorWrites::ALL,
+                    })],
+                    compilation_options: Default::default(),
+                }),
+                primitive: wgpu::PrimitiveState {
+                    topology: wgpu::PrimitiveTopology::LineList,
+                    strip_index_format: None,
+                    front_face: wgpu::FrontFace::Ccw,
+                    cull_mode: None,
+                    ..Default::default()
+                },
+                depth_stencil: None,
+                multisample: wgpu::MultisampleState::default(),
+                multiview: None,
+                cache: None,
             });
 
         // Shape vertex buffer layout: location(0) local_pos vec2<f32>
@@ -252,6 +315,7 @@ impl Renderer {
 
         Self {
             render_pipeline,
+            road_pipeline,
             camera_bind_group,
             camera_uniform_buffer,
             triangle_vertex_buffer,
@@ -260,8 +324,38 @@ impl Renderer {
             instance_buffer,
             instance_capacity,
             type_counts: TypeCounts::default(),
+            road_vertex_buffer: None,
+            road_vertex_count: 0,
             surface_format,
         }
+    }
+
+    /// Upload road network edge geometry as line segments.
+    /// Call once at init after loading the road graph.
+    pub fn upload_road_lines(&mut self, device: &wgpu::Device, edges: &[([f32; 2], [f32; 2])]) {
+        let road_color = [0.25, 0.25, 0.35, 1.0_f32]; // dark grey-blue
+        let mut vertices = Vec::with_capacity(edges.len() * 2);
+        for (start, end) in edges {
+            vertices.push(RoadLineVertex {
+                position: *start,
+                color: road_color,
+            });
+            vertices.push(RoadLineVertex {
+                position: *end,
+                color: road_color,
+            });
+        }
+        self.road_vertex_count = vertices.len() as u32;
+        if !vertices.is_empty() {
+            self.road_vertex_buffer = Some(device.create_buffer_init(
+                &wgpu::util::BufferInitDescriptor {
+                    label: Some("road_lines"),
+                    contents: bytemuck::cast_slice(&vertices),
+                    usage: wgpu::BufferUsages::VERTEX,
+                },
+            ));
+        }
+        log::info!("Uploaded {} road line segments", edges.len());
     }
 
     /// Upload the camera view-projection matrix to the uniform buffer.
@@ -384,6 +478,17 @@ impl Renderer {
             ..Default::default()
         });
 
+        // Draw road lines first (background layer).
+        if let Some(ref road_buf) = self.road_vertex_buffer {
+            if self.road_vertex_count > 0 {
+                pass.set_pipeline(&self.road_pipeline);
+                pass.set_bind_group(0, &self.camera_bind_group, &[]);
+                pass.set_vertex_buffer(0, road_buf.slice(..));
+                pass.draw(0..self.road_vertex_count, 0..1);
+            }
+        }
+
+        // Draw agents on top.
         pass.set_pipeline(&self.render_pipeline);
         pass.set_bind_group(0, &self.camera_bind_group, &[]);
         pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
