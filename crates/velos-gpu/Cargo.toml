@@ -9,6 +9,10 @@ license.workspace = true
 default = []
 gpu-tests = []
 
+[[bin]]
+name = "velos-gpu"
+path = "src/main.rs"
+
 [dependencies]
 velos-core = { path = "../velos-core" }
 wgpu = { workspace = true }
@@ -19,3 +23,4 @@ log = { workspace = true }
 glam = { workspace = true }
 pollster = { workspace = true }
 env_logger = { workspace = true }
+winit = { workspace = true }

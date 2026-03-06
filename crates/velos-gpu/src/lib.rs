@@ -1,6 +1,7 @@
 //! velos-gpu: GPU device management, compute dispatch, and rendering.
 //! Exposes high-level API only -- no raw wgpu types in public API.
 
+pub mod app;
 pub mod buffers;
 pub mod camera;
 pub mod compute;
@@ -8,6 +9,7 @@ pub mod device;
 pub mod error;
 pub mod renderer;
 
+pub use app::VelosApp;
 pub use buffers::{BufferPool, GpuKinematics, GpuPosition};
 pub use camera::Camera2D;
 pub use compute::ComputeDispatcher;
