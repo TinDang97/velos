@@ -1,0 +1,21 @@
+[package]
+name = "velos-gpu"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[features]
+default = []
+gpu-tests = []
+
+[dependencies]
+velos-core = { path = "../velos-core" }
+wgpu = { workspace = true }
+hecs = { workspace = true }
+bytemuck = { workspace = true }
+thiserror = { workspace = true }
+log = { workspace = true }
+glam = { workspace = true }
+pollster = { workspace = true }
+env_logger = { workspace = true }
