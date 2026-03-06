@@ -1,0 +1,11 @@
+[package]
+name = "velos-signal"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Fixed-time traffic signal controllers with phase cycling"
+
+[dependencies]
+thiserror.workspace = true
+log.workspace = true

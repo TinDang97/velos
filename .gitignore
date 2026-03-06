@@ -16,3 +16,7 @@ Cargo.lock
 .serena
 .claude
 .planning
+data/*
+!data/hcmc/
+!data/hcmc/*.osm.pbf
+tmp/*
