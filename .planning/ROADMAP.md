@@ -12,7 +12,7 @@ VELOS validates GPU-accelerated traffic microsimulation on macOS Apple Silicon t
 
 Decimal phases appear between their surrounding integers in numeric order.
 
-- [ ] **Phase 1: GPU Pipeline & Visual Proof** - Validate wgpu/Metal compute pipeline, f32 shaders, ECS-to-GPU round-trip, winit window with GPU-instanced dot/triangle renderer, benchmarks
+- [x] **Phase 1: GPU Pipeline & Visual Proof** - Validate wgpu/Metal compute pipeline, f32 shaders, ECS-to-GPU round-trip, winit window with GPU-instanced dot/triangle renderer, benchmarks (completed 2026-03-06)
 - [ ] **Phase 2: Road Network & Vehicle Models + egui** - Build HCMC road graph, IDM car-following, MOBIL lane-change, signals, A* routing, demand spawning, gridlock detection, egui dashboard and controls
 - [ ] **Phase 3: Motorbike Sublane & Pedestrians** - Continuous lateral positioning, basic social force pedestrians, mixed-traffic interactions (filtering, clustering)
 
@@ -79,6 +79,6 @@ Phases execute in numeric order: 1 -> 2 -> 3
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. GPU Pipeline & Visual Proof | 1/2 | In Progress|  |
+| 1. GPU Pipeline & Visual Proof | 2/2 | Complete   | 2026-03-06 |
 | 2. Road Network & Vehicle Models + egui | 0/3 | Not started | - |
 | 3. Motorbike Sublane & Pedestrians | 0/2 | Not started | - |

@@ -16,10 +16,10 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Rendering
 
-- [ ] **REN-01**: winit native macOS window hosts wgpu render surface with compute and render sharing the same device
-- [ ] **REN-02**: GPU-instanced 2D renderer draws styled agent shapes (triangles for motorbikes, rectangles for cars, dots for pedestrians) with direction arrows
-- [ ] **REN-03**: Zoom/pan camera controls, visible road lanes, intersection areas marked
-- [ ] **REN-04**: One instanced draw call per vehicle type for rendering performance
+- [x] **REN-01**: winit native macOS window hosts wgpu render surface with compute and render sharing the same device
+- [x] **REN-02**: GPU-instanced 2D renderer draws styled agent shapes (triangles for motorbikes, rectangles for cars, dots for pedestrians) with direction arrows
+- [x] **REN-03**: Zoom/pan camera controls, visible road lanes, intersection areas marked
+- [x] **REN-04**: One instanced draw call per vehicle type for rendering performance
 
 ### Vehicle Models
 
@@ -142,10 +142,10 @@ Which phases cover which requirements. Updated during roadmap creation.
 | GPU-02 | Phase 1 | Complete |
 | GPU-03 | Phase 1 | Complete |
 | GPU-04 | Phase 1 | Complete |
-| REN-01 | Phase 1 | Pending |
-| REN-02 | Phase 1 | Pending |
-| REN-03 | Phase 1 | Pending |
-| REN-04 | Phase 1 | Pending |
+| REN-01 | Phase 1 | Complete |
+| REN-02 | Phase 1 | Complete |
+| REN-03 | Phase 1 | Complete |
+| REN-04 | Phase 1 | Complete |
 | PERF-01 | Phase 1 | Complete |
 | PERF-02 | Phase 1 | Complete |
 | VEH-01 | Phase 2 | Pending |

@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: Ready to replan
-stopped_at: Completed 01-gpu-foundation-spikes-01-01-PLAN.md
-last_updated: "2026-03-06T08:32:50.388Z"
-last_activity: 2026-03-06 -- Project simplified (5-phase to 3-phase)
+status: In Progress
+stopped_at: Completed 01-gpu-foundation-spikes-01-02-PLAN.md
+last_updated: "2026-03-06T08:54:00Z"
+last_activity: 2026-03-06 -- Plan 02 complete: winit window + GPU-instanced renderer + camera
 progress:
   total_phases: 3
   completed_phases: 0
   total_plans: 2
-  completed_plans: 1
-  percent: 0
+  completed_plans: 2
+  percent: 100
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-03-06)
 ## Current Position
 
 Phase: 1 of 3 (GPU Pipeline & Visual Proof)
-Plan: 0 (existing plans stale, needs replanning)
-Status: Ready to replan
-Last activity: 2026-03-06 -- Project simplified (5-phase to 3-phase)
+Plan: 2 of 2 (COMPLETE)
+Status: Phase 01 Complete - GO for Phase 02
+Last activity: 2026-03-06 -- Plan 02 complete: winit window + GPU-instanced renderer + camera controls
 
-Progress: [░░░░░░░░░░] 0%
+Progress: [██████████] 100% (Phase 01)
 
 ## Performance Metrics
 
@@ -50,7 +50,11 @@ Progress: [░░░░░░░░░░] 0%
 - Trend: -
 
 *Updated after each plan completion*
-| Phase 01-gpu-foundation-spikes P01 | 9 | 2 tasks | 18 files |
+
+| Phase | Plan | Duration | Tasks | Files |
+|-------|------|----------|-------|-------|
+| 01-gpu-foundation-spikes | P01 | 9min | 4 tasks | 18 files |
+| 01-gpu-foundation-spikes | P02 | 19min | 2 tasks + 1 fix | 8 files |
 
 ## Accumulated Context
 
@@ -70,11 +74,13 @@ Recent decisions affecting current work:
 - [Phase 01-gpu-foundation-spikes]: wgpu 28 API: PollType::wait_indefinitely() replaces Maintain::Wait -- updated all GPU poll calls
 - [Phase 01-gpu-foundation-spikes]: GPU-01/02/03/04 all PASS on Metal: GO for Plan 02 (road graph + vehicle rendering)
 - [Phase 01-gpu-foundation-spikes]: BufferPool: all buffers use STORAGE|COPY_SRC|COPY_DST to support ECS upload + dispatch + readback pattern
+- [Phase 01-gpu-foundation-spikes P02]: winit 0.30 uses resumed() not can_create_surfaces() as window creation entry point
+- [Phase 01-gpu-foundation-spikes P02]: Pan fix: begin_pan deferred to first CursorMoved (not MouseInput::Pressed) to avoid Vec2::ZERO jump
+- [Phase 01-gpu-foundation-spikes P02]: Phase 01 GO -- all REN-01 through REN-04 verified on Metal; proceed to Phase 02
 
 ### Pending Todos
 
-- Delete or archive stale Phase 1 plans (01-01, 01-02, 01-03) based on old architecture
-- Replan Phase 1 with simplified scope
+- Phase 01 COMPLETE. Begin Phase 02: Road Graph + Vehicle Simulation + egui controls.
 
 ### Blockers/Concerns
 
@@ -83,6 +89,6 @@ Recent decisions affecting current work:
 
 ## Session Continuity
 
-Last session: 2026-03-06T08:32:50.386Z
-Stopped at: Completed 01-gpu-foundation-spikes-01-01-PLAN.md
+Last session: 2026-03-06T08:54:00Z
+Stopped at: Completed 01-gpu-foundation-spikes-01-02-PLAN.md
 Resume file: None
