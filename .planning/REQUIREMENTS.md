@@ -1,7 +1,7 @@
 # Requirements: VELOS
 
 **Defined:** 2026-03-06
-**Core Value:** Motorbikes move realistically through traffic using continuous sublane positioning — not forced into discrete lanes like Western traffic models
+**Core Value:** Motorbikes move realistically through traffic using continuous sublane positioning -- not forced into discrete lanes like Western traffic models
 
 ## v1 Requirements
 
@@ -13,6 +13,8 @@ Requirements for initial release. Each maps to roadmap phases.
 - [ ] **GPU-02**: Fixed-point arithmetic uses Q16.16 for positions, Q12.20 for speeds, Q8.8 for lateral offsets, ensuring bitwise-deterministic results across runs
 - [ ] **GPU-03**: hecs ECS stores agent state as components, projected to SoA GPU buffers each frame via queue.write_buffer() with entity-to-GPU index mapping
 - [ ] **GPU-04**: CFL numerical stability check validates dt * max_speed < cell_size before each simulation step to prevent agents teleporting
+- [ ] **GPU-05**: Per-lane leader index computation sorts agents by position within each lane (not per-edge), handling lane-change transition state with dual-leader tracking
+- [ ] **GPU-06**: Deterministic GPU pseudo-random number generation using PCG hash (agent_id x step -> uniform noise) for IDM driver imperfection without WGSL rand()
 
 ### Vehicle Models
 
@@ -20,12 +22,14 @@ Requirements for initial release. Each maps to roadmap phases.
 - [ ] **VEH-02**: MOBIL lane-change model evaluates lane-change benefit vs politeness threshold (0.3 for HCMC) for car agents
 - [ ] **VEH-03**: Motorbike sublane model uses continuous lateral position (FixedQ8_8) enabling filtering between cars, red-light clustering, and swarm behavior
 - [ ] **VEH-04**: Pedestrian social force model with adaptive GPU workgroups based on density, including jaywalking probability (0.3 for HCMC)
+- [ ] **VEH-05**: Bicycle agents with sublane behavior (rightmost position, no filtering, v0=15km/h)
 
 ### Road Network
 
 - [ ] **NET-01**: OSM importer parses OpenStreetMap PBF data for a small HCMC area into a directed road graph with lane counts, speed limits, and one-way rules
 - [ ] **NET-02**: rstar R-tree spatial index enables fast neighbor queries (all agents within X meters) for car-following, lane-change, and motorbike gap detection
 - [ ] **NET-03**: Fixed-time traffic signal controller manages green/red/amber phases per intersection approach with configurable timing
+- [ ] **NET-04**: Edge-local to world coordinate transform system with pre-computed cumulative distances and O(log S) binary search lookup for rendering
 
 ### Routing & Prediction
 
@@ -43,6 +47,10 @@ Requirements for initial release. Each maps to roadmap phases.
 
 - [ ] **MESO-01**: Mesoscopic queue model simulates distant network areas using simplified link-level flow dynamics
 - [ ] **MESO-02**: Graduated buffer zone (100m) transitions agents between meso and micro models with velocity interpolation and IDM parameter relaxation to eliminate phantom waves
+
+### Gridlock Detection
+
+- [ ] **GRID-01**: Gridlock detection system identifies and resolves circular waiting at intersections (speed=0 for >300s, cycle detection, configurable resolution: teleport/reroute/signal override)
 
 ### Application
 
@@ -107,37 +115,42 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| GPU-01 | TBD | Pending |
-| GPU-02 | TBD | Pending |
-| GPU-03 | TBD | Pending |
-| GPU-04 | TBD | Pending |
-| VEH-01 | TBD | Pending |
-| VEH-02 | TBD | Pending |
-| VEH-03 | TBD | Pending |
-| VEH-04 | TBD | Pending |
-| NET-01 | TBD | Pending |
-| NET-02 | TBD | Pending |
-| NET-03 | TBD | Pending |
-| RTE-01 | TBD | Pending |
-| RTE-02 | TBD | Pending |
-| RTE-03 | TBD | Pending |
-| DEM-01 | TBD | Pending |
-| DEM-02 | TBD | Pending |
-| DEM-03 | TBD | Pending |
-| MESO-01 | TBD | Pending |
-| MESO-02 | TBD | Pending |
-| APP-01 | TBD | Pending |
-| APP-02 | TBD | Pending |
-| APP-03 | TBD | Pending |
-| APP-04 | TBD | Pending |
-| PERF-01 | TBD | Pending |
-| PERF-02 | TBD | Pending |
+| GPU-01 | Phase 1 | Pending |
+| GPU-02 | Phase 1 | Pending |
+| GPU-03 | Phase 1 | Pending |
+| GPU-04 | Phase 1 | Pending |
+| GPU-05 | Phase 1 | Pending |
+| GPU-06 | Phase 1 | Pending |
+| VEH-01 | Phase 2 | Pending |
+| VEH-02 | Phase 2 | Pending |
+| VEH-03 | Phase 3 | Pending |
+| VEH-04 | Phase 3 | Pending |
+| VEH-05 | Phase 3 | Pending |
+| NET-01 | Phase 2 | Pending |
+| NET-02 | Phase 2 | Pending |
+| NET-03 | Phase 2 | Pending |
+| NET-04 | Phase 2 | Pending |
+| RTE-01 | Phase 4 | Pending |
+| RTE-02 | Phase 4 | Pending |
+| RTE-03 | Phase 4 | Pending |
+| DEM-01 | Phase 2 | Pending |
+| DEM-02 | Phase 2 | Pending |
+| DEM-03 | Phase 2 | Pending |
+| MESO-01 | Phase 4 | Pending |
+| MESO-02 | Phase 4 | Pending |
+| GRID-01 | Phase 2 | Pending |
+| APP-01 | Phase 5 | Pending |
+| APP-02 | Phase 5 | Pending |
+| APP-03 | Phase 5 | Pending |
+| APP-04 | Phase 5 | Pending |
+| PERF-01 | Phase 1 | Pending |
+| PERF-02 | Phase 1 | Pending |
 
 **Coverage:**
-- v1 requirements: 25 total
-- Mapped to phases: 0
-- Unmapped: 25
+- v1 requirements: 30 total
+- Mapped to phases: 30
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-03-06*
-*Last updated: 2026-03-06 after initial definition*
+*Last updated: 2026-03-06 after roadmap revision (4-phase -> 5-phase restructure, +5 new requirements)*
