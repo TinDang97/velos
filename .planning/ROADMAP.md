@@ -14,7 +14,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: GPU Pipeline & Visual Proof** - Validate wgpu/Metal compute pipeline, f32 shaders, ECS-to-GPU round-trip, winit window with GPU-instanced dot/triangle renderer, benchmarks (completed 2026-03-06)
 - [ ] **Phase 2: Road Network & Vehicle Models + egui** - Build HCMC road graph, IDM car-following, MOBIL lane-change, signals, A* routing, demand spawning, gridlock detection, egui dashboard and controls
-- [ ] **Phase 3: Motorbike Sublane & Pedestrians** - Continuous lateral positioning, basic social force pedestrians, mixed-traffic interactions (filtering, clustering)
+- [x] **Phase 3: Motorbike Sublane & Pedestrians** - Continuous lateral positioning, basic social force pedestrians, mixed-traffic interactions (filtering, clustering) (completed 2026-03-07)
 
 ## Phase Details
 
@@ -71,7 +71,7 @@ Plans:
 
 Plans:
 - [x] 03-01-PLAN.md -- Sublane model + social force model: pure functions with tests (LateralOffset, gap-seeking, Helbing model)
-- [ ] 03-02-PLAN.md -- Integration: wire models into SimWorld tick loop, spatial index, swarming color, visual verification
+- [x] 03-02-PLAN.md -- Integration: wire models into SimWorld tick loop, spatial index, swarming color, visual verification
 
 ## Progress
 
@@ -82,4 +82,4 @@ Phases execute in numeric order: 1 -> 2 -> 3
 |-------|----------------|--------|-----------|
 | 1. GPU Pipeline & Visual Proof | 2/2 | Complete   | 2026-03-06 |
 | 2. Road Network & Vehicle Models + egui | 3/4 | In progress | - |
-| 3. Motorbike Sublane & Pedestrians | 1/2 | In progress | - |
+| 3. Motorbike Sublane & Pedestrians | 2/2 | Complete   | 2026-03-07 |
