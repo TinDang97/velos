@@ -1,13 +1,11 @@
-//! VelosApp: winit ApplicationHandler for the GPU pipeline visual proof.
+//! VelosApp: winit ApplicationHandler with egui integration.
 //!
-//! State pattern: GpuState is None until can_create_surfaces() fires.
-//! Frame loop: ECS step -> GPU upload -> compute -> readback -> render -> present.
+//! State pattern: GpuState is None until resumed() fires.
+//! Frame loop: sim tick -> render agents -> render egui -> present.
 
 use std::sync::Arc;
 
 use glam::Vec2;
-use hecs::World;
-use velos_core::components::{Kinematics, Position};
 use winit::{
     application::ApplicationHandler,
     dpi::PhysicalSize,
@@ -17,17 +15,12 @@ use winit::{
 };
 
 use crate::{
-    buffers::BufferPool,
     camera::Camera2D,
-    compute::ComputeDispatcher,
     renderer::Renderer,
+    sim::{SimState, SimWorld},
 };
 
-const AGENT_COUNT: usize = 1000;
-const BUFFER_CAPACITY: u32 = 1024;
-
-/// All GPU and simulation state, initialized once on first resume.
-#[allow(dead_code)]
+/// All GPU, rendering, and simulation state.
 struct GpuState {
     window: Arc<Window>,
     surface: wgpu::Surface<'static>,
@@ -35,23 +28,22 @@ struct GpuState {
     device: wgpu::Device,
     queue: wgpu::Queue,
     adapter: wgpu::Adapter,
-    world: World,
-    buffer_pool: BufferPool,
-    dispatcher: ComputeDispatcher,
     renderer: Renderer,
     camera: Camera2D,
+    sim: SimWorld,
+    // egui state
+    egui_ctx: egui::Context,
+    egui_state: egui_winit::State,
+    egui_renderer: egui_wgpu::Renderer,
     /// True while the left mouse button is held down.
-    /// Pan starts on the first CursorMoved after the press so begin_pan
-    /// always receives a real cursor position (never Vec2::ZERO).
     left_pressed: bool,
-    frame_count: u64,
+    last_frame_time: std::time::Instant,
 }
 
 impl GpuState {
     fn new(window: Arc<Window>) -> Self {
         let size = window.inner_size();
 
-        // Initialize GPU context and surface
         let (device, queue, adapter, surface) = pollster::block_on(async {
             let instance = wgpu::Instance::default();
             let surface = instance.create_surface(window.clone()).unwrap();
@@ -79,7 +71,6 @@ impl GpuState {
             (device, queue, adapter, surface)
         });
 
-        // Configure surface
         let caps = surface.get_capabilities(&adapter);
         let format = caps.formats[0];
         let surface_config = wgpu::SurfaceConfiguration {
@@ -94,59 +85,49 @@ impl GpuState {
         };
         surface.configure(&device, &surface_config);
 
-        // Initialize ECS world with 1K agents
-        let mut world = World::new();
-        let speed = 5.0_f64; // m/s
-        for i in 0..AGENT_COUNT {
-            let angle = (i as f64) * std::f64::consts::TAU / (AGENT_COUNT as f64);
-            // Spread agents in a 200m radius circle
-            let x = 300.0 + 200.0 * angle.cos();
-            let y = 200.0 + 200.0 * angle.sin();
-            // Each agent moves tangent to the circle
-            let vx = speed * (-angle.sin());
-            let vy = speed * angle.cos();
-            world.spawn((
-                Position { x, y },
-                Kinematics {
-                    vx,
-                    vy,
-                    speed,
-                    heading: vx.atan2(vy),
-                },
-            ));
-        }
-
-        let mut buffer_pool = BufferPool::new(&device, BUFFER_CAPACITY);
-        let dispatcher = ComputeDispatcher::new(&device);
         let renderer = Renderer::new(&device, format);
-        let camera = Camera2D::new(Vec2::new(size.width as f32, size.height as f32));
 
-        // Initial upload
-        buffer_pool.upload_from_ecs(&world, &queue);
-        // Copy back -> front to prime the front buffers for first dispatch
-        {
-            let mut encoder = device.create_command_encoder(&Default::default());
-            let pos_bytes = (buffer_pool.agent_count as usize * 8) as u64;
-            let kin_bytes = (buffer_pool.agent_count as usize * 16) as u64;
-            if pos_bytes > 0 {
-                encoder.copy_buffer_to_buffer(
-                    &buffer_pool.pos_back,
-                    0,
-                    &buffer_pool.pos_front,
-                    0,
-                    pos_bytes,
-                );
-                encoder.copy_buffer_to_buffer(
-                    &buffer_pool.kin_back,
-                    0,
-                    &buffer_pool.kin_front,
-                    0,
-                    kin_bytes,
-                );
+        // Load road graph.
+        let pbf_path = std::path::Path::new("data/hcmc/district1.osm.pbf");
+        let road_graph = if pbf_path.exists() {
+            match velos_net::import_osm(pbf_path, 10.7756, 106.7019) {
+                Ok(g) => {
+                    log::info!(
+                        "Loaded road graph: {} nodes, {} edges",
+                        g.node_count(),
+                        g.edge_count()
+                    );
+                    g
+                }
+                Err(e) => {
+                    log::error!("Failed to import OSM: {e:?}");
+                    velos_net::RoadGraph::new(petgraph::graph::DiGraph::new())
+                }
             }
-            queue.submit(std::iter::once(encoder.finish()));
-            let _ = device.poll(wgpu::PollType::wait_indefinitely());
-        }
+        } else {
+            log::warn!("PBF not found at {:?}, using empty graph", pbf_path);
+            velos_net::RoadGraph::new(petgraph::graph::DiGraph::new())
+        };
+
+        let sim = SimWorld::new(road_graph);
+        let (cx, cy) = sim.network_center();
+
+        let mut camera = Camera2D::new(Vec2::new(size.width as f32, size.height as f32));
+        camera.center = Vec2::new(cx, cy);
+        camera.zoom = 0.5; // Start zoomed out to see the network.
+
+        // Initialize egui.
+        let egui_ctx = egui::Context::default();
+        let egui_state = egui_winit::State::new(
+            egui_ctx.clone(),
+            egui_ctx.viewport_id(),
+            &*window,
+            None,
+            None,
+            None,
+        );
+        let egui_renderer =
+            egui_wgpu::Renderer::new(&device, format, egui_wgpu::RendererOptions::default());
 
         Self {
             window,
@@ -155,13 +136,14 @@ impl GpuState {
             device,
             queue,
             adapter,
-            world,
-            buffer_pool,
-            dispatcher,
             renderer,
             camera,
+            sim,
+            egui_ctx,
+            egui_state,
+            egui_renderer,
             left_pressed: false,
-            frame_count: 0,
+            last_frame_time: std::time::Instant::now(),
         }
     }
 
@@ -176,44 +158,15 @@ impl GpuState {
     }
 
     fn update(&mut self) {
-        const DT: f32 = 0.016; // ~60 FPS timestep
+        let now = std::time::Instant::now();
+        let frame_dt = now.duration_since(self.last_frame_time).as_secs_f64();
+        self.last_frame_time = now;
+        self.sim.metrics.frame_time_ms = frame_dt * 1000.0;
 
-        // Compute dispatch: reads front, writes back
-        let mut encoder = self.device.create_command_encoder(&Default::default());
-        self.dispatcher.dispatch(
-            &mut encoder,
-            &self.buffer_pool,
-            &self.device,
-            &self.queue,
-            DT,
-        );
-        self.queue.submit(std::iter::once(encoder.finish()));
-        let _ = self.device.poll(wgpu::PollType::wait_indefinitely());
-        self.buffer_pool.swap();
-
-        // Readback positions for CPU-side instance buffer update
-        // Phase 1: small enough to do this every frame for 1K agents
-        let positions = ComputeDispatcher::readback_positions(
-            &self.buffer_pool,
-            &self.device,
-            &self.queue,
-        );
-
-        // Derive heading per agent from tangential angle (constant for circular orbit)
-        let headings: Vec<f32> = (0..positions.len())
-            .map(|i| {
-                let angle = (i as f64) * std::f64::consts::TAU / (AGENT_COUNT as f64);
-                // Tangential direction heading
-                (std::f64::consts::FRAC_PI_2 + angle) as f32
-            })
-            .collect();
-
+        let base_dt = 0.016_f64; // ~60 FPS base timestep
+        let (motorbikes, cars, pedestrians) = self.sim.tick(base_dt);
         self.renderer
-            .update_instances_from_cpu(&self.queue, &positions, &headings);
-
-        self.frame_count += 1;
-        #[allow(clippy::let_underscore_must_use)]
-        let _ = self.frame_count; // suppress unused warning
+            .update_instances_typed(&self.queue, &motorbikes, &cars, &pedestrians);
     }
 
     fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
@@ -222,14 +175,106 @@ impl GpuState {
 
         self.renderer.update_camera(&self.queue, &self.camera);
 
-        let mut encoder = self.device.create_command_encoder(&Default::default());
-        self.renderer.render_frame(
-            &mut encoder,
-            &view,
+        // Render agents into first encoder.
+        {
+            let mut encoder = self.device.create_command_encoder(&Default::default());
+            self.renderer.render_frame(&mut encoder, &view);
+            self.queue.submit(std::iter::once(encoder.finish()));
+        }
+
+        // egui UI -- inline drawing to avoid borrow checker issues.
+        let raw_input = self.egui_state.take_egui_input(&self.window);
+        let sim = &mut self.sim;
+        let full_output = self.egui_ctx.run(raw_input, |ctx| {
+            egui::SidePanel::left("controls")
+                .exact_width(240.0)
+                .show(ctx, |ui| {
+                    ui.heading("VELOS");
+                    ui.separator();
+
+                    ui.heading("Controls");
+                    let is_running = sim.sim_state == SimState::Running;
+                    let btn_text = if is_running { "Pause" } else { "Start" };
+                    if ui.button(btn_text).clicked() {
+                        sim.sim_state = if is_running {
+                            SimState::Paused
+                        } else {
+                            SimState::Running
+                        };
+                    }
+                    if ui.button("Reset").clicked() {
+                        sim.reset();
+                    }
+                    ui.add(
+                        egui::Slider::new(&mut sim.speed_mult, 0.1..=4.0)
+                            .text("Speed"),
+                    );
+                    ui.separator();
+
+                    ui.heading("Metrics");
+                    let m = &sim.metrics;
+                    ui.label(format!("Frame: {:.1}ms", m.frame_time_ms));
+                    ui.label(format!("Sim time: {:.0}s", m.sim_time));
+                    ui.label(format!("Agents: {}", m.agent_count));
+                    ui.label(format!("  Motorbikes: {}", m.motorbike_count));
+                    ui.label(format!("  Cars: {}", m.car_count));
+                    ui.label(format!("  Pedestrians: {}", m.ped_count));
+                });
+        });
+
+        self.egui_state
+            .handle_platform_output(&self.window, full_output.platform_output);
+
+        let tris = self
+            .egui_ctx
+            .tessellate(full_output.shapes, full_output.pixels_per_point);
+
+        for (id, image_delta) in &full_output.textures_delta.set {
+            self.egui_renderer
+                .update_texture(&self.device, &self.queue, *id, image_delta);
+        }
+
+        let screen_desc = egui_wgpu::ScreenDescriptor {
+            size_in_pixels: [self.surface_config.width, self.surface_config.height],
+            pixels_per_point: self.window.scale_factor() as f32,
+        };
+
+        // Render egui into separate encoder.
+        let mut egui_encoder = self.device.create_command_encoder(&Default::default());
+        self.egui_renderer.update_buffers(
+            &self.device,
+            &self.queue,
+            &mut egui_encoder,
+            &tris,
+            &screen_desc,
         );
 
-        self.queue.submit(std::iter::once(encoder.finish()));
+        let mut pass = egui_encoder
+            .begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("egui_render_pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &view,
+                    resolve_target: None,
+                    depth_slice: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                ..Default::default()
+            })
+            .forget_lifetime();
+        self.egui_renderer.render(&mut pass, &tris, &screen_desc);
+        drop(pass);
+
+        self.queue.submit(std::iter::once(egui_encoder.finish()));
         output.present();
+
+        for id in &full_output.textures_delta.free {
+            self.egui_renderer.free_texture(id);
+        }
+
         Ok(())
     }
 }
@@ -258,7 +303,7 @@ impl ApplicationHandler for VelosApp {
                 event_loop
                     .create_window(
                         WindowAttributes::default()
-                            .with_title("VELOS - GPU Pipeline Proof")
+                            .with_title("VELOS - Traffic Microsimulation")
                             .with_inner_size(winit::dpi::LogicalSize::new(1280_u32, 720_u32)),
                     )
                     .expect("Failed to create window"),
@@ -278,12 +323,22 @@ impl ApplicationHandler for VelosApp {
             None => return,
         };
 
+        // Pass events to egui FIRST. If egui wants input, don't forward to camera.
+        let egui_response = state.egui_state.on_window_event(&state.window, &event);
+        let egui_wants_pointer = state.egui_ctx.wants_pointer_input();
+        let egui_wants_keyboard = state.egui_ctx.wants_keyboard_input();
+
+        if egui_response.consumed {
+            return;
+        }
+
         match event {
             WindowEvent::CloseRequested => event_loop.exit(),
 
             WindowEvent::KeyboardInput { event, .. } => {
-                if event.physical_key
-                    == winit::keyboard::PhysicalKey::Code(winit::keyboard::KeyCode::Escape)
+                if !egui_wants_keyboard
+                    && event.physical_key
+                        == winit::keyboard::PhysicalKey::Code(winit::keyboard::KeyCode::Escape)
                 {
                     event_loop.exit();
                 }
@@ -309,38 +364,35 @@ impl ApplicationHandler for VelosApp {
             }
 
             WindowEvent::MouseWheel { delta, .. } => {
-                match delta {
-                    // Physical scroll wheel or trackpad line-based scroll.
-                    // X delta pans horizontally; Y delta zooms.
-                    MouseScrollDelta::LineDelta(x, y) => {
-                        if x.abs() > 0.0 {
-                            // Horizontal scroll: pan X. Scale to ~pixels at 1x zoom.
-                            state.camera.pan_by(x * 20.0, 0.0);
+                if !egui_wants_pointer {
+                    match delta {
+                        MouseScrollDelta::LineDelta(x, y) => {
+                            if x.abs() > 0.0 {
+                                state.camera.pan_by(x * 20.0, 0.0);
+                            }
+                            state.camera.scroll(y);
                         }
-                        state.camera.scroll(y);
-                    }
-                    // macOS trackpad two-finger scroll fires PixelDelta.
-                    // X delta pans; Y delta zooms (natural scroll).
-                    MouseScrollDelta::PixelDelta(pos) => {
-                        let px = pos.x as f32;
-                        let py = pos.y as f32;
-                        if px.abs() > 1.0 {
-                            state.camera.pan_by(px, 0.0);
+                        MouseScrollDelta::PixelDelta(pos) => {
+                            let px = pos.x as f32;
+                            let py = pos.y as f32;
+                            if px.abs() > 1.0 {
+                                state.camera.pan_by(px, 0.0);
+                            }
+                            state.camera.scroll(py / 20.0);
                         }
-                        state.camera.scroll(py / 20.0);
                     }
                 }
             }
 
             WindowEvent::CursorMoved { position, .. } => {
-                let new_pos = Vec2::new(position.x as f32, position.y as f32);
-                if state.left_pressed {
-                    // begin_pan on first CursorMoved while button held, so last_cursor
-                    // is always set from a real position event (never Vec2::ZERO).
-                    if !state.camera.is_panning() {
-                        state.camera.begin_pan(new_pos);
-                    } else {
-                        state.camera.update_pan(new_pos);
+                if !egui_wants_pointer {
+                    let new_pos = Vec2::new(position.x as f32, position.y as f32);
+                    if state.left_pressed {
+                        if !state.camera.is_panning() {
+                            state.camera.begin_pan(new_pos);
+                        } else {
+                            state.camera.update_pan(new_pos);
+                        }
                     }
                 }
             }
@@ -350,12 +402,10 @@ impl ApplicationHandler for VelosApp {
                 button,
                 ..
             } => {
-                if button == MouseButton::Left {
+                if !egui_wants_pointer && button == MouseButton::Left {
                     match btn_state {
                         ElementState::Pressed => {
                             state.left_pressed = true;
-                            // Don't call begin_pan here; wait for the first CursorMoved
-                            // so begin_pan receives the actual cursor position from the event.
                         }
                         ElementState::Released => {
                             state.left_pressed = false;
@@ -368,5 +418,4 @@ impl ApplicationHandler for VelosApp {
             _ => {}
         }
     }
-
 }

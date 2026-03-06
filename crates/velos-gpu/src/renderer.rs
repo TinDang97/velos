@@ -174,7 +174,7 @@ impl Renderer {
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("render_pipeline_layout"),
                 bind_group_layouts: &[&camera_bind_group_layout],
-                immediate_size: 0,
+                push_constant_ranges: &[],
             });
 
         // Shape vertex buffer layout: location(0) local_pos vec2<f32>
@@ -217,7 +217,7 @@ impl Renderer {
                 },
                 depth_stencil: None,
                 multisample: wgpu::MultisampleState::default(),
-                multiview_mask: None,
+                multiview: None,
                 cache: None,
             });
 

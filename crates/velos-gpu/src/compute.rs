@@ -95,7 +95,7 @@ impl ComputeDispatcher {
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("compute_pipeline_layout"),
                 bind_group_layouts: &[&bind_group_layout],
-                immediate_size: 0,
+                push_constant_ranges: &[],
             });
 
         let pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {

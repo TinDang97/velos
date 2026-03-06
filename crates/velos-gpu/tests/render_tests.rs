@@ -39,7 +39,7 @@ fn test_instanced_render() {
     };
 
     let surface_format = wgpu::TextureFormat::Bgra8UnormSrgb;
-    let renderer = Renderer::new(&ctx.device, surface_format);
+    let mut renderer = Renderer::new(&ctx.device, surface_format);
 
     // Build 1K fake positions and headings
     let positions: Vec<[f32; 2]> =

@@ -22,3 +22,40 @@ pub struct Kinematics {
     /// Heading angle in radians (0 = east, CCW positive).
     pub heading: f64,
 }
+
+/// Vehicle type tag for an agent in the ECS.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum VehicleType {
+    Motorbike,
+    Car,
+    Pedestrian,
+}
+
+/// Agent's position along a road edge.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct RoadPosition {
+    /// Index of the current edge in the road graph.
+    pub edge_index: u32,
+    /// Current lane (0-based from right).
+    pub lane: u8,
+    /// Distance along edge from start node (metres).
+    pub offset_m: f64,
+}
+
+/// Agent's assigned route as a sequence of node indices.
+#[derive(Debug, Clone)]
+pub struct Route {
+    /// Sequence of node indices forming the path.
+    pub path: Vec<u32>,
+    /// Current index into `path` (the node we are heading toward).
+    pub current_step: usize,
+}
+
+/// Agent timing state for gridlock detection.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct WaitState {
+    /// Simulation time when speed first hit zero.
+    pub stopped_since: f64,
+    /// True if the agent is waiting at a red signal (not gridlock).
+    pub at_red_signal: bool,
+}

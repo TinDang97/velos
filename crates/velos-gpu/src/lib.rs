@@ -8,6 +8,7 @@ pub mod compute;
 pub mod device;
 pub mod error;
 pub mod renderer;
+pub mod sim;
 
 pub use app::VelosApp;
 pub use buffers::{BufferPool, GpuKinematics, GpuPosition};
