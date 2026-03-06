@@ -50,12 +50,13 @@ Plans:
   8. egui controls (start/stop/pause/speed/reset) invoke simulation methods and take effect immediately
   9. egui dashboard displays real-time metrics (frame time, agent count, throughput)
   10. Agents render as styled shapes on visible road lanes with direction arrows
-**Plans**: TBD
+**Plans**: 4 plans
 
 Plans:
-- [ ] 02-01: TBD
-- [ ] 02-02: TBD
-- [ ] 02-03: TBD
+- [ ] 02-01-PLAN.md -- velos-net crate: OSM import, projection, road graph, spatial index, A* routing
+- [ ] 02-02-PLAN.md -- velos-vehicle + velos-signal: IDM, MOBIL, gridlock, traffic signals
+- [ ] 02-03-PLAN.md -- velos-demand: OD matrix, time-of-day profiles, agent spawner
+- [ ] 02-04-PLAN.md -- Integration: wgpu downgrade, per-type rendering, wire subsystems, egui sidebar
 
 ### Phase 3: Motorbike Sublane & Pedestrians
 **Goal**: Motorbikes move with continuous lateral positioning (the core differentiator) and pedestrians move via basic social force with jaywalking
@@ -80,5 +81,5 @@ Phases execute in numeric order: 1 -> 2 -> 3
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. GPU Pipeline & Visual Proof | 2/2 | Complete   | 2026-03-06 |
-| 2. Road Network & Vehicle Models + egui | 0/3 | Not started | - |
+| 2. Road Network & Vehicle Models + egui | 0/4 | Not started | - |
 | 3. Motorbike Sublane & Pedestrians | 0/2 | Not started | - |

@@ -1,0 +1,11 @@
+[package]
+name = "velos-demand"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+thiserror = { workspace = true }
+log = { workspace = true }
+rand = { workspace = true }
