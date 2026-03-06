@@ -51,6 +51,18 @@ pub struct Route {
     pub current_step: usize,
 }
 
+/// Lateral offset for motorbike sublane positioning.
+///
+/// Only attached to motorbike agents. Tracks continuous lateral position
+/// across the road width (measured from right edge in metres).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct LateralOffset {
+    /// Current lateral offset from road right edge (metres).
+    pub lateral_offset: f64,
+    /// Target lateral position from gap-seeking or swarming (metres).
+    pub desired_lateral: f64,
+}
+
 /// Agent timing state for gridlock detection.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct WaitState {
