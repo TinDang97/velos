@@ -3,11 +3,11 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: planning
-stopped_at: Phase 1 context gathered
-last_updated: "2026-03-06T04:54:19.453Z"
-last_activity: 2026-03-06 -- Roadmap revised (4-phase to 5-phase restructure)
+stopped_at: Project simplified, Phase 1 context revised
+last_updated: "2026-03-06T05:30:00.000Z"
+last_activity: 2026-03-06 -- Project simplified (5-phase to 3-phase, dropped fixed-point/CCH/meso-micro/wave-front)
 progress:
-  total_phases: 5
+  total_phases: 3
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-06)
 
 **Core value:** Motorbikes move realistically through traffic using continuous sublane positioning -- not forced into discrete lanes like Western traffic models
-**Current focus:** Phase 1: GPU Foundation & Spikes
+**Current focus:** Phase 1: GPU Pipeline & Visual Proof
 
 ## Current Position
 
-Phase: 1 of 5 (GPU Foundation & Spikes)
-Plan: 0 of 3 in current phase
-Status: Ready to plan
-Last activity: 2026-03-06 -- Roadmap revised (4-phase to 5-phase restructure)
+Phase: 1 of 3 (GPU Pipeline & Visual Proof)
+Plan: 0 (existing plans stale, needs replanning)
+Status: Ready to replan
+Last activity: 2026-03-06 -- Project simplified (5-phase to 3-phase)
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -58,25 +58,27 @@ Progress: [░░░░░░░░░░] 0%
 Decisions are logged in PROJECT.md Key Decisions table.
 Recent decisions affecting current work:
 
-- [Roadmap]: GPU spikes isolated in Phase 1 -- validate wgpu/Metal, fixed-point WGSL, wave-front dispatch before any simulation logic
-- [Roadmap]: Road network moved to Phase 2 with vehicle models -- agents need roads, roads need agents, ship them together
-- [Roadmap]: Motorbike sublane + pedestrian + bicycle grouped in Phase 3 -- all "non-car" agent types in one phase after longitudinal behavior proven
-- [Roadmap]: Routing/prediction/meso-micro grouped in Phase 4 -- all "smart routing" concerns together
-- [Roadmap]: Desktop app last (Phase 5) -- simulation testable headless via unit/integration tests throughout
+- [Simplification]: f64 CPU / f32 GPU -- no fixed-point types, no emulated i64 WGSL
+- [Simplification]: Simple parallel dispatch -- no wave-front (Gauss-Seidel), no PCG hash
+- [Simplification]: A* on petgraph -- no CCH, no prediction ensemble, no meso-micro hybrid, no rerouting
+- [Simplification]: Motorbikes + cars + pedestrians -- no bicycles
+- [Simplification]: Rendering from Phase 1 -- winit window with GPU-instanced styled shapes, zoom/pan
+- [Simplification]: egui in Phase 2 -- controls when there's real simulation to control
+- [Simplification]: Styled + instanced rendering -- direction arrows, visible road lanes
+- [Roadmap]: 3 phases (down from 5): GPU+Visual -> Road+Vehicles+egui -> Motorbike+Pedestrian
 
 ### Pending Todos
 
-None yet.
+- Delete or archive stale Phase 1 plans (01-01, 01-02, 01-03) based on old architecture
+- Replan Phase 1 with simplified scope
 
 ### Blockers/Concerns
 
-- [Phase 1]: WGSL lacks i64 -- Q16.16 multiply can overflow i32 intermediates. May need Q20.12 or f32+@invariant fallback.
 - [Phase 2]: Gridlock detection cycle-finding algorithm choice TBD (tarjan vs simple visited-set).
-- [Phase 4]: CCH has no off-the-shelf Rust crate -- full custom implementation required using petgraph + rayon.
-- [Phase 5]: RESOLVED -- switched from Tauri+React to winit+egui. Eliminates webview/wgpu surface conflict entirely. Proven pattern (Bevy ecosystem).
+- [Phase 5]: RESOLVED -- switched from Tauri+React to winit+egui. Eliminates webview/wgpu surface conflict entirely.
 
 ## Session Continuity
 
-Last session: 2026-03-06T04:54:19.450Z
-Stopped at: Phase 1 context gathered
+Last session: 2026-03-06T05:30:00.000Z
+Stopped at: Project simplified, Phase 1 context revised
 Resume file: .planning/phases/01-gpu-foundation-spikes/01-CONTEXT.md
