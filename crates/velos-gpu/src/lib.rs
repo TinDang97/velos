@@ -9,6 +9,10 @@ pub mod device;
 pub mod error;
 pub mod renderer;
 pub mod sim;
+mod sim_helpers;
+mod sim_lifecycle;
+mod sim_render;
+pub mod sim_snapshot;
 
 pub use app::VelosApp;
 pub use buffers::{BufferPool, GpuKinematics, GpuPosition};

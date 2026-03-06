@@ -479,13 +479,13 @@ impl Renderer {
         });
 
         // Draw road lines first (background layer).
-        if let Some(ref road_buf) = self.road_vertex_buffer {
-            if self.road_vertex_count > 0 {
-                pass.set_pipeline(&self.road_pipeline);
-                pass.set_bind_group(0, &self.camera_bind_group, &[]);
-                pass.set_vertex_buffer(0, road_buf.slice(..));
-                pass.draw(0..self.road_vertex_count, 0..1);
-            }
+        if let Some(ref road_buf) = self.road_vertex_buffer
+            && self.road_vertex_count > 0
+        {
+            pass.set_pipeline(&self.road_pipeline);
+            pass.set_bind_group(0, &self.camera_bind_group, &[]);
+            pass.set_vertex_buffer(0, road_buf.slice(..));
+            pass.draw(0..self.road_vertex_count, 0..1);
         }
 
         // Draw agents on top.
