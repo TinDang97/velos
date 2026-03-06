@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: In Progress
-stopped_at: Completed 01-gpu-foundation-spikes-01-02-PLAN.md
-last_updated: "2026-03-06T08:54:00Z"
-last_activity: 2026-03-06 -- Plan 02 complete: winit window + GPU-instanced renderer + camera
+status: completed
+stopped_at: Completed 02-02-PLAN.md
+last_updated: "2026-03-06T14:39:33.202Z"
+last_activity: "2026-03-06 -- Plan 02 complete: winit window + GPU-instanced renderer + camera controls"
 progress:
   total_phases: 3
-  completed_phases: 0
-  total_plans: 2
-  completed_plans: 2
+  completed_phases: 1
+  total_plans: 6
+  completed_plans: 3
   percent: 100
 ---
 
@@ -55,6 +55,7 @@ Progress: [██████████] 100% (Phase 01)
 |-------|------|----------|-------|-------|
 | 01-gpu-foundation-spikes | P01 | 9min | 4 tasks | 18 files |
 | 01-gpu-foundation-spikes | P02 | 19min | 2 tasks + 1 fix | 8 files |
+| Phase 02-road-network-vehicle-models-egui P02 | 5min | 2 tasks | 15 files |
 
 ## Accumulated Context
 
@@ -77,6 +78,8 @@ Recent decisions affecting current work:
 - [Phase 01-gpu-foundation-spikes P02]: winit 0.30 uses resumed() not can_create_surfaces() as window creation entry point
 - [Phase 01-gpu-foundation-spikes P02]: Pan fix: begin_pan deferred to first CursorMoved (not MouseInput::Pressed) to avoid Vec2::ZERO jump
 - [Phase 01-gpu-foundation-spikes P02]: Phase 01 GO -- all REN-01 through REN-04 verified on Metal; proceed to Phase 02
+- [Phase 02]: BFS visited-set for gridlock detection over Tarjan SCC -- simpler, sufficient at POC scale
+- [Phase 02]: Pure CPU math models (IDM/MOBIL/signal) with f64 precision, zero external deps beyond thiserror/log
 
 ### Pending Todos
 
@@ -89,6 +92,6 @@ Recent decisions affecting current work:
 
 ## Session Continuity
 
-Last session: 2026-03-06T08:54:00Z
-Stopped at: Completed 01-gpu-foundation-spikes-01-02-PLAN.md
+Last session: 2026-03-06T14:39:33.200Z
+Stopped at: Completed 02-02-PLAN.md
 Resume file: None

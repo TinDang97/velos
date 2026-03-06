@@ -23,8 +23,8 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Vehicle Models
 
-- [ ] **VEH-01**: IDM car-following model adjusts each agent's speed based on gap to leader with ballistic stopping guard preventing negative velocities
-- [ ] **VEH-02**: MOBIL lane-change model evaluates lane-change benefit vs politeness threshold (0.3 for HCMC) for car agents
+- [x] **VEH-01**: IDM car-following model adjusts each agent's speed based on gap to leader with ballistic stopping guard preventing negative velocities
+- [x] **VEH-02**: MOBIL lane-change model evaluates lane-change benefit vs politeness threshold (0.3 for HCMC) for car agents
 - [ ] **VEH-03**: Motorbike sublane model uses continuous lateral position enabling filtering between cars, red-light clustering, and swarm behavior
 - [ ] **VEH-04**: Pedestrian basic social force model (repulsion from other agents + attraction to destination), including jaywalking probability (0.3 for HCMC)
 
@@ -32,7 +32,7 @@ Requirements for initial release. Each maps to roadmap phases.
 
 - [ ] **NET-01**: OSM importer parses OpenStreetMap PBF data for a small HCMC area into a directed road graph with lane counts, speed limits, and one-way rules
 - [ ] **NET-02**: rstar R-tree spatial index enables fast neighbor queries (all agents within X meters) for car-following, lane-change, and motorbike gap detection
-- [ ] **NET-03**: Fixed-time traffic signal controller manages green/red/amber phases per intersection approach with configurable timing
+- [x] **NET-03**: Fixed-time traffic signal controller manages green/red/amber phases per intersection approach with configurable timing
 - [ ] **NET-04**: Edge-local to world coordinate transform system for rendering
 
 ### Routing
@@ -47,7 +47,7 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Gridlock Detection
 
-- [ ] **GRID-01**: Gridlock detection system identifies and resolves circular waiting at intersections (speed=0 for >300s, configurable resolution: teleport/reroute/signal override)
+- [x] **GRID-01**: Gridlock detection system identifies and resolves circular waiting at intersections (speed=0 for >300s, configurable resolution: teleport/reroute/signal override)
 
 ### Application UI
 
@@ -148,17 +148,17 @@ Which phases cover which requirements. Updated during roadmap creation.
 | REN-04 | Phase 1 | Complete |
 | PERF-01 | Phase 1 | Complete |
 | PERF-02 | Phase 1 | Complete |
-| VEH-01 | Phase 2 | Pending |
-| VEH-02 | Phase 2 | Pending |
+| VEH-01 | Phase 2 | Complete |
+| VEH-02 | Phase 2 | Complete |
 | NET-01 | Phase 2 | Pending |
 | NET-02 | Phase 2 | Pending |
-| NET-03 | Phase 2 | Pending |
+| NET-03 | Phase 2 | Complete |
 | NET-04 | Phase 2 | Pending |
 | RTE-01 | Phase 2 | Pending |
 | DEM-01 | Phase 2 | Pending |
 | DEM-02 | Phase 2 | Pending |
 | DEM-03 | Phase 2 | Pending |
-| GRID-01 | Phase 2 | Pending |
+| GRID-01 | Phase 2 | Complete |
 | APP-01 | Phase 2 | Pending |
 | APP-02 | Phase 2 | Pending |
 | VEH-03 | Phase 3 | Pending |
