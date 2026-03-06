@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: in-progress
-stopped_at: Completed 02-03-PLAN.md
-last_updated: "2026-03-06T14:38:57Z"
-last_activity: "2026-03-06 -- Plan 03 complete: OD matrix + ToD profiles + agent spawner (80/15/5)"
+stopped_at: Completed 02-01-PLAN.md
+last_updated: "2026-03-06T14:40:14Z"
+last_activity: "2026-03-06 -- Plan 01 complete: velos-net crate with OSM import, spatial index, A* routing"
 progress:
   total_phases: 3
   completed_phases: 1
   total_plans: 6
-  completed_plans: 4
-  percent: 67
+  completed_plans: 5
+  percent: 83
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-03-06)
 ## Current Position
 
 Phase: 2 of 3 (Road Network & Vehicle Models + egui)
-Plan: 3 of 4 (COMPLETE)
-Status: Plan 02-03 complete -- demand generation crate ready
-Last activity: 2026-03-06 -- Plan 03 complete: OD matrix + ToD profiles + agent spawner (80/15/5)
+Plan: 4 of 4 (next: 02-04)
+Status: Plans 02-01, 02-02, 02-03 complete -- velos-net, velos-vehicle, velos-demand, velos-signal ready
+Last activity: 2026-03-06 -- Plan 01 complete: velos-net crate with OSM import, spatial index, A* routing
 
-Progress: [██████░░░░] 67% (Overall)
+Progress: [████████░░] 83% (Overall)
 
 ## Performance Metrics
 
@@ -57,6 +57,7 @@ Progress: [██████░░░░] 67% (Overall)
 | 01-gpu-foundation-spikes | P02 | 19min | 2 tasks + 1 fix | 8 files |
 | 02-road-network-vehicle-models-egui | P02 | 5min | 2 tasks | 15 files |
 | 02-road-network-vehicle-models-egui | P03 | 6min | 2 tasks | 8 files |
+| 02-road-network-vehicle-models-egui | P01 | 7min | 2 tasks | 15 files |
 
 ## Accumulated Context
 
@@ -84,10 +85,13 @@ Recent decisions affecting current work:
 - [Phase 02 P03]: SpawnVehicleType local enum in velos-demand to avoid circular dep with velos-vehicle
 - [Phase 02 P03]: Bernoulli fractional spawning for sub-1.0 expected counts (no systematic undercounting)
 - [Phase 02 P03]: gen_range(0.0..1.0) for Rust 2024 edition compatibility (gen is reserved keyword)
+- [Phase 02 P01]: Overpass API XML converted to PBF via osmium-tool for osmpbf crate compatibility
+- [Phase 02 P01]: Included primary_link/secondary_link/tertiary_link road types for better graph connectivity
+- [Phase 02 P01]: A* edge cost = travel time (length/speed), not raw distance, for realistic routing
 
 ### Pending Todos
 
-- Plan 02-04 (integration): wire demand spawner + vehicle models + road graph + egui sidebar
+- Plan 02-04 (integration): wire demand spawner + vehicle models + road graph + egui sidebar -- all subsystem crates ready
 
 ### Blockers/Concerns
 
@@ -96,6 +100,6 @@ Recent decisions affecting current work:
 
 ## Session Continuity
 
-Last session: 2026-03-06T14:38:57Z
-Stopped at: Completed 02-03-PLAN.md
-Resume file: .planning/phases/02-road-network-vehicle-models-egui/02-03-SUMMARY.md
+Last session: 2026-03-06T14:40:14Z
+Stopped at: Completed 02-01-PLAN.md
+Resume file: .planning/phases/02-road-network-vehicle-models-egui/02-01-SUMMARY.md

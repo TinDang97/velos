@@ -30,14 +30,14 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Road Network
 
-- [ ] **NET-01**: OSM importer parses OpenStreetMap PBF data for a small HCMC area into a directed road graph with lane counts, speed limits, and one-way rules
-- [ ] **NET-02**: rstar R-tree spatial index enables fast neighbor queries (all agents within X meters) for car-following, lane-change, and motorbike gap detection
+- [x] **NET-01**: OSM importer parses OpenStreetMap PBF data for a small HCMC area into a directed road graph with lane counts, speed limits, and one-way rules
+- [x] **NET-02**: rstar R-tree spatial index enables fast neighbor queries (all agents within X meters) for car-following, lane-change, and motorbike gap detection
 - [x] **NET-03**: Fixed-time traffic signal controller manages green/red/amber phases per intersection approach with configurable timing
-- [ ] **NET-04**: Edge-local to world coordinate transform system for rendering
+- [x] **NET-04**: Edge-local to world coordinate transform system for rendering
 
 ### Routing
 
-- [ ] **RTE-01**: A* pathfinding on petgraph provides shortest-path queries for agent route assignment
+- [x] **RTE-01**: A* pathfinding on petgraph provides shortest-path queries for agent route assignment
 
 ### Demand
 
@@ -150,11 +150,11 @@ Which phases cover which requirements. Updated during roadmap creation.
 | PERF-02 | Phase 1 | Complete |
 | VEH-01 | Phase 2 | Complete |
 | VEH-02 | Phase 2 | Complete |
-| NET-01 | Phase 2 | Pending |
-| NET-02 | Phase 2 | Pending |
+| NET-01 | Phase 2 | Complete |
+| NET-02 | Phase 2 | Complete |
 | NET-03 | Phase 2 | Complete |
-| NET-04 | Phase 2 | Pending |
-| RTE-01 | Phase 2 | Pending |
+| NET-04 | Phase 2 | Complete |
+| RTE-01 | Phase 2 | Complete |
 | DEM-01 | Phase 2 | Complete |
 | DEM-02 | Phase 2 | Complete |
 | DEM-03 | Phase 2 | Complete |

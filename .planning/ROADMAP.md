@@ -53,7 +53,7 @@ Plans:
 **Plans**: 4 plans
 
 Plans:
-- [ ] 02-01-PLAN.md -- velos-net crate: OSM import, projection, road graph, spatial index, A* routing
+- [x] 02-01-PLAN.md -- velos-net crate: OSM import, projection, road graph, spatial index, A* routing
 - [ ] 02-02-PLAN.md -- velos-vehicle + velos-signal: IDM, MOBIL, gridlock, traffic signals
 - [ ] 02-03-PLAN.md -- velos-demand: OD matrix, time-of-day profiles, agent spawner
 - [ ] 02-04-PLAN.md -- Integration: wgpu downgrade, per-type rendering, wire subsystems, egui sidebar
