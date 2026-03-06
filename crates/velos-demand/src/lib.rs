@@ -11,4 +11,5 @@ pub mod tod_profile;
 
 pub use error::DemandError;
 pub use od_matrix::{OdMatrix, Zone};
+pub use spawner::{SpawnRequest, SpawnVehicleType, Spawner};
 pub use tod_profile::TodProfile;

@@ -1,0 +1,16 @@
+[package]
+name = "velos-net"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Road graph, OSM import, spatial index, and routing for VELOS"
+
+[dependencies]
+osmpbf = { workspace = true }
+petgraph = { workspace = true }
+rstar = { workspace = true }
+thiserror = { workspace = true }
+log = { workspace = true }
+
+[dev-dependencies]
