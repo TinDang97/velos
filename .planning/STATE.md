@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: SUMO Replacement Engine
 status: executing
-stopped_at: Completed 05-04-PLAN.md
-last_updated: "2026-03-07T12:43:01Z"
-last_activity: 2026-03-07 -- Completed Plan 05-04 (GPU wave-front dispatch + physics cutover)
+stopped_at: Completed 05-05-PLAN.md (Phase 5 complete)
+last_updated: "2026-03-07T13:05:09Z"
+last_activity: 2026-03-07 -- Completed Plan 05-05 (Multi-GPU partitioning + 280K benchmark) -- Phase 5 complete
 progress:
   total_phases: 3
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 5
-  completed_plans: 4
-  percent: 20
+  completed_plans: 5
+  percent: 33
 ---
 
 # Project State
@@ -25,12 +25,12 @@ See: .planning/PROJECT.md (updated 2026-03-07)
 
 ## Current Position
 
-Phase: 5 of 7 (Foundation & GPU Engine)
-Plan: 04 complete, ready for 05
-Status: Executing
-Last activity: 2026-03-07 -- Completed Plan 05-04 (GPU wave-front dispatch + physics cutover)
+Phase: 5 of 7 (Foundation & GPU Engine) -- COMPLETE
+Plan: 05 of 05 complete -- Phase 5 finished
+Status: Phase 5 complete, ready for Phase 6
+Last activity: 2026-03-07 -- Completed Plan 05-05 (Multi-GPU partitioning + 280K benchmark)
 
-Progress: [##--------] 20%
+Progress: [███-------] 33%
 
 ## Accumulated Context
 
@@ -55,6 +55,9 @@ Recent decisions affecting current work:
 - [05-04]: f32 intermediates for GPU physics, fixed-point only for position/speed storage
 - [05-04]: tick_gpu() as production method, tick() as CPU fallback for tests
 - [05-04]: CPU reference functions kept in cpu_reference module for ongoing GPU validation
+- [05-05]: BFS-based balanced bisection fallback for METIS (libmetis vendored build fails on macOS)
+- [05-05]: Logical partitions on single GPU validate boundary protocol without multi-adapter
+- [05-05]: PartitionMode enum (Single/Multi) preserves backward compatibility on SimWorld
 
 ### Pending Todos
 
@@ -62,14 +65,13 @@ None.
 
 ### Blockers/Concerns
 
-- GPU compute now wired into sim loop via tick_gpu() -- CPU path replaced (Plan 05-04)
-- wgpu multi-adapter for compute is untested -- Spike S2 needed before multi-GPU implementation
+- cf_model differentiation gap: agents behave identically regardless of IDM/Krauss -- shader branching or cf_model assignment issue. Track for Phase 6.
 - No Rust CCH crate exists -- Phase 7 requires custom implementation (2-3 weeks estimated)
-- Fixed-point penalty may be 40-80% -- @invariant fallback available if performance unacceptable
 - Meso-micro hybrid (AGT-05/AGT-06) may be unnecessary if full-micro handles 280K within 15ms frame time
+- Multi-GPU boundary protocol validated with logical partitions; physical multi-adapter untested (wgpu Spike S2 still needed)
 
 ## Session Continuity
 
-Last session: 2026-03-07T12:43:01Z
-Stopped at: Completed 05-04-PLAN.md
-Resume file: .planning/phases/05-foundation-gpu-engine/05-04-SUMMARY.md
+Last session: 2026-03-07T13:05:09Z
+Stopped at: Completed 05-05-PLAN.md (Phase 5 complete)
+Resume file: .planning/phases/05-foundation-gpu-engine/05-05-SUMMARY.md
