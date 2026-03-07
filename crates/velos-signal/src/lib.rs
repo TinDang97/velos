@@ -7,6 +7,9 @@
 //! - **ActuatedController** for detector-based gap-out control
 //! - **AdaptiveController** for queue-proportional green redistribution
 //! - **LoopDetector** virtual point sensor for vehicle detection
+//! - **SpatBroadcast** for V2I signal phase/timing broadcast
+//! - **PriorityQueue** for bus/emergency signal priority requests
+//! - **TrafficSign** and **GpuSign** for traffic sign interaction
 
 pub mod actuated;
 pub mod adaptive;
@@ -14,14 +17,20 @@ pub mod controller;
 pub mod detector;
 pub mod error;
 pub mod plan;
+pub mod priority;
+pub mod signs;
+pub mod spat;
 
 use detector::DetectorReading;
 use plan::PhaseState;
+use priority::PriorityRequest;
+use spat::SpatBroadcast;
 
 /// Unified trait for all signal controller types.
 ///
 /// Controllers advance simulation time via `tick`, report current phase
 /// state for each approach via `get_phase_state`, and can be reset.
+/// Extended with SPaT broadcast and priority request support.
 pub trait SignalController {
     /// Advance the controller by `dt` seconds, incorporating detector readings.
     ///
@@ -34,6 +43,29 @@ pub trait SignalController {
 
     /// Reset the controller to the start of the cycle.
     fn reset(&mut self);
+
+    /// Get SPaT broadcast data for all approaches.
+    ///
+    /// Default implementation returns current phase states with zero timing.
+    /// Controllers with timing awareness should override this.
+    fn spat_data(&self, num_approaches: usize) -> SpatBroadcast {
+        let approach_states = (0..num_approaches)
+            .map(|i| self.get_phase_state(i))
+            .collect();
+        SpatBroadcast {
+            approach_states,
+            time_to_next_change: 0.0,
+            cycle_time: 0.0,
+        }
+    }
+
+    /// Handle a signal priority request from a bus or emergency vehicle.
+    ///
+    /// Default implementation is a no-op. Actuated and adaptive controllers
+    /// override this to extend green or shorten conflicting red.
+    fn request_priority(&mut self, _request: &PriorityRequest) {
+        // No-op by default (fixed-time controllers cannot respond to priority)
+    }
 }
 
 /// Implement `SignalController` for `FixedTimeController`.

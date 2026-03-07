@@ -10,6 +10,8 @@
 
 use crate::detector::DetectorReading;
 use crate::plan::{PhaseState, SignalPlan};
+use crate::priority::{PriorityRequest, MAX_GREEN_EXTENSION, MAX_RED_SHORTENING};
+use crate::spat::SpatBroadcast;
 use crate::SignalController;
 
 /// Adaptive traffic signal controller.
@@ -182,5 +184,39 @@ impl SignalController for AdaptiveController {
 
     fn reset(&mut self) {
         self.elapsed = 0.0;
+    }
+
+    fn spat_data(&self, num_approaches: usize) -> SpatBroadcast {
+        let approach_states = (0..num_approaches)
+            .map(|i| self.get_phase_state(i))
+            .collect();
+
+        // Compute time to next phase change
+        let (phase_idx, time_in_phase) = self.current_phase_info();
+        let phase = &self.plan.phases[phase_idx];
+        let time_to_next = (phase.duration() - time_in_phase).max(0.0);
+
+        SpatBroadcast {
+            approach_states,
+            time_to_next_change: time_to_next,
+            cycle_time: self.plan.cycle_time,
+        }
+    }
+
+    fn request_priority(&mut self, request: &PriorityRequest) {
+        let (phase_idx, _) = self.current_phase_info();
+        let phase = &self.plan.phases[phase_idx];
+
+        if phase.approaches.contains(&request.approach_index) {
+            // Approach is green -- extend by up to MAX_GREEN_EXTENSION
+            self.plan.phases[phase_idx].green_duration += MAX_GREEN_EXTENSION;
+            self.plan.cycle_time = self.plan.phases.iter().map(|p| p.duration()).sum();
+        } else {
+            // Approach is red -- shorten current green by up to MAX_RED_SHORTENING
+            let current_green = self.plan.phases[phase_idx].green_duration;
+            let shortened = (current_green - MAX_RED_SHORTENING).max(self.min_green_per_phase);
+            self.plan.phases[phase_idx].green_duration = shortened;
+            self.plan.cycle_time = self.plan.phases.iter().map(|p| p.duration()).sum();
+        }
     }
 }

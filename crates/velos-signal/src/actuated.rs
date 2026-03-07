@@ -7,6 +7,8 @@
 
 use crate::detector::DetectorReading;
 use crate::plan::{PhaseState, SignalPlan};
+use crate::priority::{PriorityRequest, MAX_GREEN_EXTENSION, MAX_RED_SHORTENING};
+use crate::spat::SpatBroadcast;
 use crate::SignalController;
 
 /// An actuated traffic signal controller.
@@ -152,5 +154,50 @@ impl SignalController for ActuatedController {
         self.gap_timer = 0.0;
         self.in_amber = false;
         self.amber_elapsed = 0.0;
+    }
+
+    fn spat_data(&self, num_approaches: usize) -> SpatBroadcast {
+        let approach_states = (0..num_approaches)
+            .map(|i| self.get_phase_state(i))
+            .collect();
+
+        // Estimate time to next change based on current state
+        let time_to_next = if self.in_amber {
+            let amber_dur = self.current_amber_duration();
+            (amber_dur - self.amber_elapsed).max(0.0)
+        } else {
+            // Time until gap-out or max green, whichever is sooner
+            let time_to_max = (self.max_green - self.phase_active_time).max(0.0);
+            let time_to_gap = (self.gap_threshold - self.gap_timer).max(0.0);
+            if self.phase_active_time >= self.min_green {
+                // Can gap out -- next change is min of gap-out and max green
+                time_to_gap.min(time_to_max)
+            } else {
+                // Must wait for min green first
+                let time_to_min = self.min_green - self.phase_active_time;
+                time_to_min.max(time_to_gap).min(time_to_max)
+            }
+        };
+
+        SpatBroadcast {
+            approach_states,
+            time_to_next_change: time_to_next,
+            cycle_time: self.plan.cycle_time,
+        }
+    }
+
+    fn request_priority(&mut self, request: &PriorityRequest) {
+        let current_approaches = &self.plan.phases[self.current_phase_idx].approaches;
+        if current_approaches.contains(&request.approach_index) {
+            // Approach is currently green -- extend green by up to MAX_GREEN_EXTENSION
+            self.max_green = (self.max_green + MAX_GREEN_EXTENSION).min(
+                self.phase_active_time + MAX_GREEN_EXTENSION,
+            );
+        } else {
+            // Approach is red -- shorten conflicting green by up to MAX_RED_SHORTENING
+            // Force earlier transition by reducing remaining green time
+            let shortened = (self.max_green - MAX_RED_SHORTENING).max(self.min_green);
+            self.max_green = shortened;
+        }
     }
 }
