@@ -317,7 +317,6 @@ fn find_edge_between(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use super::*;
 
     #[test]
     fn reroute_state_default_config() {
