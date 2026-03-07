@@ -9,3 +9,4 @@ description = "Fixed-time traffic signal controllers with phase cycling"
 [dependencies]
 thiserror.workspace = true
 log.workspace = true
+bytemuck = { workspace = true }

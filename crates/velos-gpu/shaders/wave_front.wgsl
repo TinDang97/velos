@@ -85,6 +85,10 @@ struct Params {
     dt: f32,
     step_counter: u32,
     emergency_count: u32,
+    sign_count: u32,
+    sim_time: f32,
+    _pad0: u32,
+    _pad1: u32,
 }
 
 struct AgentState {
@@ -128,6 +132,28 @@ struct EmergencyVehicle {
 @group(0) @binding(3) var<storage, read> lane_counts: array<u32>;
 @group(0) @binding(4) var<storage, read> lane_agents: array<u32>;
 @group(0) @binding(5) var<storage, read> emergency_vehicles: array<EmergencyVehicle>;
+
+// Traffic sign data (matches Rust GpuSign, 16 bytes per sign)
+struct GpuSign {
+    sign_type: u32,   // 0=SpeedLimit, 1=Stop, 2=Yield, 3=NoTurn, 4=SchoolZone
+    value: f32,       // speed limit (m/s), gap time (s), etc.
+    edge_id: u32,     // edge where sign is located
+    offset_m: f32,    // position along the edge (metres)
+}
+
+@group(0) @binding(6) var<storage, read> signs: array<GpuSign>;
+
+// Sign type constants
+const SIGN_SPEED_LIMIT: u32 = 0u;
+const SIGN_STOP: u32 = 1u;
+const SIGN_YIELD: u32 = 2u;
+const SIGN_NO_TURN: u32 = 3u;
+const SIGN_SCHOOL_ZONE: u32 = 4u;
+
+// Sign interaction constants
+const SIGN_EFFECT_RANGE: f32 = 50.0;     // speed limit effect range (metres)
+const SIGN_STOP_RANGE: f32 = 2.0;        // stop sign trigger range (metres)
+const SCHOOL_ZONE_SPEED: f32 = 5.56;     // 20 km/h in m/s
 
 // ============================================================
 // IDM acceleration (matches CPU idm.rs)
@@ -241,6 +267,67 @@ fn check_emergency_yield(agent: ptr<function, AgentState>) {
 }
 
 // ============================================================
+// Traffic sign interaction
+// ============================================================
+
+/// Apply traffic sign effects to an agent's desired speed.
+/// Scans the sign buffer for signs on the agent's current edge.
+/// Returns the clamped desired speed after sign effects.
+fn handle_sign_interaction(agent: ptr<function, AgentState>, desired_speed: f32) -> f32 {
+    if params.sign_count == 0u {
+        return desired_speed;
+    }
+
+    var speed = desired_speed;
+    let agent_pos = fixpos_to_f32((*agent).position);
+    let agent_edge = (*agent).edge_id;
+    let s_count = min(params.sign_count, arrayLength(&signs));
+
+    for (var s = 0u; s < s_count; s = s + 1u) {
+        let sign = signs[s];
+
+        // Only process signs on the agent's current edge
+        if sign.edge_id != agent_edge {
+            continue;
+        }
+
+        let distance = abs(agent_pos - sign.offset_m);
+
+        switch sign.sign_type {
+            case SIGN_SPEED_LIMIT: {
+                // Within 50m: clamp desired speed to posted limit
+                if distance <= SIGN_EFFECT_RANGE {
+                    speed = min(speed, sign.value);
+                }
+            }
+            case SIGN_STOP: {
+                // Within 2m and still moving: set speed to 0
+                // CPU tracks gap acceptance timer for restart
+                if distance <= SIGN_STOP_RANGE {
+                    speed = 0.0;
+                }
+            }
+            case SIGN_SCHOOL_ZONE: {
+                // Treated as speed limit with reduced value when active
+                // sim_time check: sign.value encodes the limit (5.56 m/s)
+                // Time-window enforcement is done on CPU; GPU always applies
+                // the reduced speed when the sign is present in the buffer
+                if distance <= SIGN_EFFECT_RANGE {
+                    speed = min(speed, sign.value);
+                }
+            }
+            // SIGN_YIELD: handled on CPU (needs conflicting traffic info)
+            // SIGN_NO_TURN: handled at pathfinding level (Phase 7)
+            default: {
+                // No GPU-side action for Yield and NoTurn
+            }
+        }
+    }
+
+    return speed;
+}
+
+// ============================================================
 // Wave-front kernel: one workgroup per lane, thread 0 only
 // ============================================================
 
@@ -335,6 +422,9 @@ fn wave_front_update(
             // Override speed to yield target
             new_speed_f32 = min(new_speed_f32, EMERGENCY_YIELD_SPEED);
         }
+
+        // Post-processing: traffic sign interaction (speed limits, stop signs, school zones)
+        new_speed_f32 = handle_sign_interaction(&agent, new_speed_f32);
 
         // Update position: pos += avg_speed * dt (trapezoidal for smoother integration)
         let avg_speed = (own_speed_f32 + new_speed_f32) * 0.5;
