@@ -124,13 +124,51 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| (Updated by roadmapper) | | |
+| GPU-01 | Phase 5 | Pending |
+| GPU-02 | Phase 5 | Pending |
+| GPU-03 | Phase 5 | Pending |
+| GPU-04 | Phase 5 | Pending |
+| GPU-05 | Phase 5 | Pending |
+| GPU-06 | Phase 5 | Pending |
+| NET-01 | Phase 5 | Pending |
+| NET-02 | Phase 5 | Pending |
+| NET-03 | Phase 5 | Pending |
+| NET-04 | Phase 5 | Pending |
+| NET-05 | Phase 5 | Pending |
+| NET-06 | Phase 5 | Pending |
+| CFM-01 | Phase 5 | Pending |
+| CFM-02 | Phase 5 | Pending |
+| AGT-01 | Phase 6 | Pending |
+| AGT-02 | Phase 6 | Pending |
+| AGT-03 | Phase 6 | Pending |
+| AGT-04 | Phase 6 | Pending |
+| AGT-05 | Phase 6 | Pending |
+| AGT-06 | Phase 6 | Pending |
+| AGT-07 | Phase 6 | Pending |
+| AGT-08 | Phase 6 | Pending |
+| SIG-01 | Phase 6 | Pending |
+| SIG-02 | Phase 6 | Pending |
+| SIG-03 | Phase 6 | Pending |
+| SIG-04 | Phase 6 | Pending |
+| SIG-05 | Phase 6 | Pending |
+| INT-01 | Phase 7 | Pending |
+| INT-02 | Phase 7 | Pending |
+| INT-03 | Phase 7 | Pending |
+| INT-04 | Phase 7 | Pending |
+| INT-05 | Phase 7 | Pending |
+| RTE-01 | Phase 7 | Pending |
+| RTE-02 | Phase 7 | Pending |
+| RTE-03 | Phase 7 | Pending |
+| RTE-04 | Phase 7 | Pending |
+| RTE-05 | Phase 7 | Pending |
+| RTE-06 | Phase 7 | Pending |
+| RTE-07 | Phase 7 | Pending |
 
 **Coverage:**
 - v1.1 requirements: 39 total
-- Mapped to phases: 0
-- Unmapped: 39
+- Mapped to phases: 39
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-03-07*
-*Last updated: 2026-03-07 after SUMO replacement pivot*
+*Last updated: 2026-03-07 after SUMO replacement roadmap creation*
