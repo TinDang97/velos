@@ -105,7 +105,7 @@ impl SimWorld {
         let mut od = OdMatrix::district1_poc();
         let pairs: Vec<_> = od.zone_pairs().collect();
         for (from, to, count) in pairs {
-            od.set_trips(from, to, count * 10);
+            od.set_trips(from, to, count * 50);
         }
         od
     }
@@ -356,6 +356,23 @@ impl SimWorld {
 
         // Process active lane changes: gradual drift + completion.
         self.process_car_lane_changes(dt);
+
+        // Apply lateral offset for all cars with LateralOffset (including those
+        // that completed a lane change in a previous tick). apply_vehicle_update
+        // positions cars at road centerline, so we must re-apply the offset.
+        let car_offsets: Vec<(Entity, f64, bool)> = self
+            .world
+            .query_mut::<(Entity, &LateralOffset, &VehicleType, Option<&LaneChangeState>)>()
+            .into_iter()
+            .filter(|(_, _, vt, _)| **vt == VehicleType::Car)
+            .map(|(e, lat, _, lcs)| (e, lat.lateral_offset, lcs.is_some()))
+            .collect();
+        for (entity, lateral, has_lc) in car_offsets {
+            // Skip cars with active lane change — process_car_lane_changes handles those.
+            if !has_lc {
+                self.apply_lateral_world_offset(entity, lateral);
+            }
+        }
     }
 
     /// Step motorbike agents with sublane lateral positioning.
@@ -448,6 +465,15 @@ impl SimWorld {
                 let Some(n_vtype) = snapshot.vehicle_type(n.id) else {
                     continue;
                 };
+
+                // Skip agents heading in the opposite direction (head-on traffic).
+                // cos(angle_diff) < 0 means >90° apart → opposing traffic.
+                let n_heading = snapshot.heading(n.id).unwrap_or(0.0);
+                let angle_diff = n_heading - heading;
+                if angle_diff.cos() < 0.0 {
+                    continue;
+                }
+
                 let n_speed = snapshot.speed(n.id).unwrap_or(0.0);
                 let n_half_width = AgentSnapshot::half_width_for_type(n_vtype);
                 let n_lateral = snapshot.lateral_offset(n.id).unwrap_or(road_width / 2.0);

@@ -180,19 +180,28 @@ impl SimWorld {
             let new_time = drift.time_remaining - dt;
 
             if new_time <= 0.0 {
-                // Drift complete: update lane, remove LaneChangeState and LateralOffset.
+                // Drift complete: update lane, keep LateralOffset at target lane center.
                 if let Ok(rp) = self.world.query_one_mut::<&mut RoadPosition>(drift.entity) {
                     rp.lane = drift.target_lane;
                 }
-                let _ = self
-                    .world
-                    .remove::<(LaneChangeState, LateralOffset)>(drift.entity);
+                // Remove only LaneChangeState; keep LateralOffset at final position
+                // so the car stays at the correct lane center (prevents flicker).
+                let _ = self.world.remove::<(LaneChangeState,)>(drift.entity);
+                if let Ok(lat) =
+                    self.world
+                        .query_one_mut::<&mut LateralOffset>(drift.entity)
+                {
+                    lat.lateral_offset = drift.desired_lateral;
+                    lat.desired_lateral = drift.desired_lateral;
+                }
                 let _ = self.world.insert_one(
                     drift.entity,
                     LastLaneChange {
                         completed_at: sim_time,
                     },
                 );
+                // Apply the final lateral offset to world position.
+                self.apply_lateral_world_offset(drift.entity, drift.desired_lateral);
             } else {
                 // Linear drift toward target over remaining time.
                 let remaining_dist = drift.desired_lateral - drift.current_lateral;

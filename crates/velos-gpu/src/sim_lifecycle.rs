@@ -137,6 +137,22 @@ impl SimWorld {
                     desired_lateral: initial_lateral,
                 },
             ));
+        } else if vtype == VehicleType::Car {
+            // Cars get LateralOffset at lane 0 center so they render at correct lane position.
+            let initial_lateral = (0.0 + 0.5) * 3.5; // lane 0 center = 1.75m
+            self.world.spawn((
+                base_components.0,
+                base_components.1,
+                base_components.2,
+                base_components.3,
+                base_components.4,
+                base_components.5,
+                base_components.6,
+                LateralOffset {
+                    lateral_offset: initial_lateral,
+                    desired_lateral: initial_lateral,
+                },
+            ));
         } else {
             self.world.spawn(base_components);
         }

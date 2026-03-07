@@ -22,6 +22,8 @@ pub struct AgentSnapshot {
     pub vehicle_types: Vec<VehicleType>,
     /// Scalar speed per agent (m/s).
     pub speeds: Vec<f64>,
+    /// Heading in radians per agent.
+    pub headings: Vec<f64>,
     /// Lateral offset if agent is a motorbike (None for cars/pedestrians).
     pub lateral_offsets: Vec<Option<f64>>,
     /// Road position edge index per agent.
@@ -41,6 +43,7 @@ impl AgentSnapshot {
         let mut positions = Vec::new();
         let mut vehicle_types = Vec::new();
         let mut speeds = Vec::new();
+        let mut headings = Vec::new();
         let mut lateral_offsets = Vec::new();
         let mut edge_indices = Vec::new();
         let mut id_to_index = HashMap::new();
@@ -61,6 +64,7 @@ impl AgentSnapshot {
             positions.push([pos.x, pos.y]);
             vehicle_types.push(*vtype);
             speeds.push(kin.speed);
+            headings.push(kin.heading);
             lateral_offsets.push(lat.map(|l: &LateralOffset| l.lateral_offset));
             edge_indices.push(rp.edge_index);
             id_to_index.insert(eid, idx);
@@ -71,6 +75,7 @@ impl AgentSnapshot {
             positions,
             vehicle_types,
             speeds,
+            headings,
             lateral_offsets,
             edge_indices,
             id_to_index,
@@ -85,6 +90,11 @@ impl AgentSnapshot {
     /// Look up speed by entity id.
     pub fn speed(&self, id: u32) -> Option<f64> {
         self.id_to_index.get(&id).map(|&i| self.speeds[i])
+    }
+
+    /// Look up heading by entity id.
+    pub fn heading(&self, id: u32) -> Option<f64> {
+        self.id_to_index.get(&id).map(|&i| self.headings[i])
     }
 
     /// Look up lateral offset by entity id (None if not a motorbike).
