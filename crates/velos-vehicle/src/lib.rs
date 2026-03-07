@@ -6,6 +6,8 @@
 //! - **VehicleType** enum with default parameter sets
 //! - **Gridlock** cycle detection on agent waiting graphs
 
+pub mod bus;
+pub mod emergency;
 pub mod error;
 pub mod gridlock;
 pub mod idm;
