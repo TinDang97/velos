@@ -5,11 +5,13 @@
 //! produce realistic traffic patterns for HCMC District 1 POC.
 
 pub mod error;
+pub mod gtfs;
 pub mod od_matrix;
 pub mod spawner;
 pub mod tod_profile;
 
 pub use error::DemandError;
+pub use gtfs::{load_gtfs_csv, BusRoute, BusSchedule, GtfsStop};
 pub use od_matrix::{NamedZone, OdMatrix, Zone};
 pub use spawner::{SpawnRequest, SpawnVehicleType, Spawner};
 pub use tod_profile::TodProfile;

@@ -1,0 +1,3 @@
+route_id,route_short_name,route_long_name,route_type
+route_01,01,Ben Thanh - Cho Lon,3
+route_02,02,Nguyen Hue - Binh Thanh,3

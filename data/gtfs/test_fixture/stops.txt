@@ -1,0 +1,6 @@
+stop_id,stop_name,stop_lat,stop_lon
+stop_01,Ben Thanh Market,10.7725,106.6980
+stop_02,Nguyen Hue Walking Street,10.7740,106.7020
+stop_03,District 5 Terminal,10.7560,106.6650
+stop_04,Cho Lon Market,10.7540,106.6530
+stop_05,Binh Thanh Hub,10.8050,106.7100

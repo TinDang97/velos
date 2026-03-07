@@ -12,4 +12,20 @@ pub enum DemandError {
     /// Zone identifier is not recognized.
     #[error("invalid zone: {name}")]
     InvalidZone { name: String },
+
+    /// I/O error reading data files.
+    #[error("I/O error: {0}")]
+    Io(#[from] std::io::Error),
+
+    /// CSV/GTFS parse error.
+    #[error("parse error in {file} line {line}: {reason}")]
+    Parse {
+        file: String,
+        line: usize,
+        reason: String,
+    },
+
+    /// Required GTFS file is missing.
+    #[error("missing required file: {path}")]
+    MissingFile { path: String },
 }
