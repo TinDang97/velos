@@ -92,6 +92,9 @@ Recent decisions affecting current work:
 - [07-01]: BFS balanced bisection with peripheral node start (reuses Phase 5 METIS fallback pattern)
 - [07-01]: CSR format with separate forward/backward stars indexed by rank for CCH
 - [07-01]: Cache invalidation based on node_count + edge_count comparison
+- [07-02]: RoadClass duplicated in cost.rs to avoid velos-core -> velos-net circular dependency
+- [07-02]: r#gen() syntax for Rust 2024 edition (gen is reserved keyword)
+- [07-02]: Task 3 (EdgeAttributes heuristics) merged into Task 1 since same file and natural cohesion
 
 ### Pending Todos
 
@@ -106,6 +109,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-07T16:05:09Z
-Stopped at: Completed 07-01-PLAN.md
-Resume file: .planning/phases/07-intelligence-routing-prediction/07-02-PLAN.md
+Last session: 2026-03-07T16:06:00Z
+Stopped at: Completed 07-02-PLAN.md
+Resume file: .planning/phases/07-intelligence-routing-prediction/07-03-PLAN.md
