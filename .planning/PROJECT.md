@@ -119,20 +119,22 @@ Initial visual verification confirmed motorbike filtering, swarming, dispersal, 
 | Spatial query radius 6m + 20-neighbor cap | Prevents O(n^2) at density; heading filter prevents deadlocks | Good |
 | Linear drift over 2s for lane changes | Simple, visually smooth, no complex interpolation needed | Good |
 
-## Current Milestone: v1.1 Digital Twin Platform
+## Current Milestone: v1.1 SUMO Replacement Engine
 
-**Goal:** Implement the full v2 architecture -- scale to 280K agents across 5 HCMC districts with multi-GPU compute, CCH routing, prediction ensemble, deck.gl/CesiumJS web visualization, gRPC/REST API, calibration, data exports, and Docker deployment.
+**Goal:** Prove VELOS can replace SUMO by reimplementing all core SUMO features, adding Cities:Skylines-style agent intelligence and V2I that SUMO lacks, and optimizing for GPU-scale (280K+ agents). No web platform or data exports this milestone -- pure simulation engine proof.
 
 **Target features:**
-- Multi-GPU wave-front dispatch with fixed-point arithmetic (01-simulation-engine)
-- All agent models: motorbike sublane, IDM, MOBIL, pedestrian adaptive workgroups, bus dwell, meso-micro hybrid (02-agent-models)
-- CCH dynamic pathfinding with prediction ensemble (BPR+ETS+historical) (03-routing-prediction)
-- 5-district HCMC data pipeline: OSM import, signal inference, demand profiles, calibration data (04-data-pipeline-hcmc)
-- deck.gl 2D + CesiumJS 3D visualization, WebSocket scaling, gRPC/REST API (05-visualization-api)
-- Docker Compose deployment, ECS checkpoints to Parquet, PMTiles, Prometheus/Grafana monitoring (06-infrastructure)
-- Scenario DSL, batch runner, MOE comparison (07-timeline-risks)
-- GEH/RMSE calibration with Bayesian optimization (velos-calibrate)
-- FCD, edge stats, emissions (HBEFA), Parquet/CSV/GeoJSON export (velos-output)
+- Multi-GPU wave-front dispatch with fixed-point arithmetic for cross-GPU determinism
+- Krauss car-following model (SUMO default) alongside IDM, runtime-selectable per agent
+- SUMO .net.xml network import + .rou.xml demand import for model compatibility
+- All agent types: motorbike sublane, cars, trucks, buses (GTFS), bicycles, pedestrians, emergency
+- Agent intelligence: Cities:Skylines multi-factor cost function with configurable profiles
+- GPU perception + evaluation phases for autonomous agent decision-making
+- CCH dynamic pathfinding with prediction-informed routing (BPR+ETS+historical ensemble)
+- Actuated + adaptive signal control, SPaT broadcast, signal priority, V2I communication
+- Traffic sign interaction affecting agent behavior and cost function
+- Meso-micro hybrid with graduated buffer zones
+- 5-district HCMC network (25K edges, 280K agents)
 
 ---
-*Last updated: 2026-03-07 after v1.1 milestone started*
+*Last updated: 2026-03-07 after v1.1 SUMO replacement pivot*
