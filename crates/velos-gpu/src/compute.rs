@@ -30,7 +30,18 @@ struct WaveFrontParams {
     agent_count: u32,
     dt: f32,
     step_counter: u32,
-    _pad: u32,
+    emergency_count: u32,
+}
+
+/// GPU-side emergency vehicle data for yield cone detection.
+/// Matches WGSL `struct EmergencyVehicle` in wave_front.wgsl.
+#[repr(C)]
+#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct GpuEmergencyVehicle {
+    pub pos_x: f32,
+    pub pos_y: f32,
+    pub heading: f32,
+    pub _pad: f32,
 }
 
 const WORKGROUP_SIZE: u32 = 256;
@@ -53,6 +64,7 @@ pub struct ComputeDispatcher {
     lane_counts_buffer: Option<wgpu::Buffer>,
     lane_agents_buffer: Option<wgpu::Buffer>,
     staging_buffer: Option<wgpu::Buffer>,
+    emergency_buffer: wgpu::Buffer,
 
     /// Current agent count in GPU buffers.
     pub wave_front_agent_count: u32,
@@ -60,6 +72,8 @@ pub struct ComputeDispatcher {
     pub wave_front_lane_count: u32,
     /// Current step counter for RNG seeding.
     pub step_counter: u32,
+    /// Number of active emergency vehicles (0 = early-exit in shader).
+    pub emergency_count: u32,
 }
 
 impl ComputeDispatcher {
@@ -122,6 +136,8 @@ impl ComputeDispatcher {
                     bgl_entry(3, wgpu::BufferBindingType::Storage { read_only: true }, false),
                     // binding 4: lane_agents (read-only storage)
                     bgl_entry(4, wgpu::BufferBindingType::Storage { read_only: true }, false),
+                    // binding 5: emergency_vehicles (read-only storage)
+                    bgl_entry(5, wgpu::BufferBindingType::Storage { read_only: true }, false),
                 ],
             });
 
@@ -148,6 +164,15 @@ impl ComputeDispatcher {
             mapped_at_creation: false,
         });
 
+        // Emergency vehicles buffer: max 16 entries, initially empty.
+        // Pre-allocated so the bind group always has a valid buffer.
+        let emergency_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("wf_emergency_vehicles"),
+            size: (16 * std::mem::size_of::<GpuEmergencyVehicle>()) as u64,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
         Self {
             pipeline,
             bind_group_layout,
@@ -160,9 +185,11 @@ impl ComputeDispatcher {
             lane_counts_buffer: None,
             lane_agents_buffer: None,
             staging_buffer: None,
+            emergency_buffer,
             wave_front_agent_count: 0,
             wave_front_lane_count: 0,
             step_counter: 0,
+            emergency_count: 0,
         }
     }
 
@@ -262,6 +289,23 @@ impl ComputeDispatcher {
         self.wave_front_lane_count = lane_counts.len() as u32;
     }
 
+    /// Upload active emergency vehicle positions for yield cone detection.
+    ///
+    /// Maximum 16 emergency vehicles. If more are provided, only the first 16 are used.
+    /// Set to empty slice when no emergency vehicles are active (shader early-exits).
+    pub fn upload_emergency_vehicles(
+        &mut self,
+        queue: &wgpu::Queue,
+        vehicles: &[GpuEmergencyVehicle],
+    ) {
+        let count = vehicles.len().min(16);
+        self.emergency_count = count as u32;
+        if count > 0 {
+            let bytes = bytemuck::cast_slice(&vehicles[..count]);
+            queue.write_buffer(&self.emergency_buffer, 0, bytes);
+        }
+    }
+
     /// Encode a wave-front compute dispatch. One workgroup per lane.
     /// After submission, call `readback_wave_front_agents` to get updated state.
     pub fn dispatch_wave_front(
@@ -279,7 +323,7 @@ impl ComputeDispatcher {
             agent_count: self.wave_front_agent_count,
             dt,
             step_counter: self.step_counter,
-            _pad: 0,
+            emergency_count: self.emergency_count,
         };
         queue.write_buffer(&self.wf_params_buffer, 0, bytemuck::bytes_of(&params));
 
@@ -306,6 +350,10 @@ impl ComputeDispatcher {
                 wgpu::BindGroupEntry {
                     binding: 4,
                     resource: self.lane_agents_buffer.as_ref().unwrap().as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 5,
+                    resource: self.emergency_buffer.as_entire_binding(),
                 },
             ],
         });

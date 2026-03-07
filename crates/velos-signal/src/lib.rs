@@ -9,6 +9,7 @@
 //! - **LoopDetector** virtual point sensor for vehicle detection
 
 pub mod actuated;
+pub mod adaptive;
 pub mod controller;
 pub mod detector;
 pub mod error;

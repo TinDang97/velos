@@ -84,7 +84,7 @@ struct Params {
     agent_count: u32,
     dt: f32,
     step_counter: u32,
-    _pad: u32,
+    emergency_count: u32,
 }
 
 struct AgentState {
@@ -114,11 +114,20 @@ const FLAG_BUS_DWELLING: u32 = 1u;
 const FLAG_EMERGENCY_ACTIVE: u32 = 2u;
 const FLAG_YIELDING: u32 = 4u;
 
+// Emergency vehicle data for yield cone detection (max 16 active)
+struct EmergencyVehicle {
+    pos_x: f32,
+    pos_y: f32,
+    heading: f32,
+    _pad: f32,
+}
+
 @group(0) @binding(0) var<uniform> params: Params;
 @group(0) @binding(1) var<storage, read_write> agents: array<AgentState>;
 @group(0) @binding(2) var<storage, read> lane_offsets: array<u32>;
 @group(0) @binding(3) var<storage, read> lane_counts: array<u32>;
 @group(0) @binding(4) var<storage, read> lane_agents: array<u32>;
+@group(0) @binding(5) var<storage, read> emergency_vehicles: array<EmergencyVehicle>;
 
 // ============================================================
 // IDM acceleration (matches CPU idm.rs)
@@ -171,6 +180,64 @@ fn krauss_update(own_speed: f32, gap: f32, leader_speed: f32, dt: f32, rng_val: 
     let dawdle_base = select(KRAUSS_ACCEL, v_next, v_next < KRAUSS_ACCEL);
     let v_dawdled = v_next - KRAUSS_SIGMA * min(v_next, dawdle_base) * rng_val;
     return max(v_dawdled, 0.0);
+}
+
+// ============================================================
+// Emergency vehicle constants and helpers
+// ============================================================
+
+const EMERGENCY_YIELD_RANGE: f32 = 50.0;    // detection range (metres)
+const EMERGENCY_CONE_COS: f32 = 0.7071;     // cos(45 degrees) = half-angle of 90-degree cone
+const EMERGENCY_YIELD_SPEED: f32 = 1.4;     // yielding agents slow to 1.4 m/s (5 km/h)
+const EMERGENCY_INTERSECTION_SPEED: f32 = 5.0; // emergency vehicles decelerate to 5 m/s at intersections
+
+/// Check if an agent should yield to any active emergency vehicle.
+/// Sets FLAG_YIELDING on the agent if within any emergency vehicle's yield cone.
+/// Early-exits when emergency_count == 0 (zero cost in normal operation).
+fn check_emergency_yield(agent: ptr<function, AgentState>) {
+    if params.emergency_count == 0u {
+        return;
+    }
+
+    // Skip emergency vehicles themselves -- they don't yield to each other
+    if (*agent).vehicle_type == VT_EMERGENCY {
+        return;
+    }
+
+    let agent_pos_x = fixpos_to_f32((*agent).position);
+    let agent_pos_y = f32((*agent).lateral) / 256.0; // Q8.8 lateral -> f32
+
+    let em_count = min(params.emergency_count, 16u);
+    for (var e = 0u; e < em_count; e = e + 1u) {
+        let ev = emergency_vehicles[e];
+
+        // Vector from emergency to agent
+        let dx = agent_pos_x - ev.pos_x;
+        let dy = agent_pos_y - ev.pos_y;
+        let dist_sq = dx * dx + dy * dy;
+
+        // Range check
+        if dist_sq > EMERGENCY_YIELD_RANGE * EMERGENCY_YIELD_RANGE {
+            continue;
+        }
+
+        let dist = sqrt(dist_sq);
+        if dist < 0.001 {
+            continue;
+        }
+
+        // Cone direction from emergency heading
+        let dir_x = cos(ev.heading);
+        let dir_y = sin(ev.heading);
+
+        // Angle check: dot product of normalized vectors
+        let dot = (dx * dir_x + dy * dir_y) / dist;
+        if dot >= EMERGENCY_CONE_COS {
+            // Agent is in cone -- set yielding flag
+            (*agent).flags = (*agent).flags | FLAG_YIELDING;
+            return;
+        }
+    }
 }
 
 // ============================================================
@@ -228,6 +295,12 @@ fn wave_front_update(
             delta_v = own_speed_f32 - leader_speed_f32;
         }
 
+        // Pre-processing: emergency vehicle intersection deceleration
+        // Emergency vehicles with active sirens decelerate to 5 m/s safety speed
+        // at intersections (when they are the lane leader with no vehicle ahead).
+        let is_active_emergency = agent.vehicle_type == VT_EMERGENCY
+            && (agent.flags & FLAG_EMERGENCY_ACTIVE) != 0u;
+
         // Branch on car-following model
         var new_speed_f32: f32;
         var accel_f32: f32;
@@ -249,6 +322,19 @@ fn wave_front_update(
 
         // Clamp speed >= 0
         new_speed_f32 = max(new_speed_f32, 0.0);
+
+        // Post-processing: emergency vehicle intersection speed limit
+        if is_active_emergency && i == 0u {
+            // Lane leader emergency vehicle: cap speed at intersection safety limit
+            new_speed_f32 = min(new_speed_f32, EMERGENCY_INTERSECTION_SPEED);
+        }
+
+        // Post-processing: check if this agent should yield to an emergency vehicle
+        check_emergency_yield(&agent);
+        if (agent.flags & FLAG_YIELDING) != 0u {
+            // Override speed to yield target
+            new_speed_f32 = min(new_speed_f32, EMERGENCY_YIELD_SPEED);
+        }
 
         // Update position: pos += avg_speed * dt (trapezoidal for smoother integration)
         let avg_speed = (own_speed_f32 + new_speed_f32) * 0.5;
