@@ -64,6 +64,9 @@ Recent decisions affecting current work:
 - [06-01]: VehicleType extended to 7 variants: Motorbike, Car, Bus, Bicycle, Truck, Emergency, Pedestrian
 - [06-01]: Bicycle uses sublane model (like Motorbike); Bus/Truck/Emergency use lane-based (like Car)
 - [06-01]: VehicleType enum order = GPU u32 mapping (0=Motorbike..6=Pedestrian)
+- [06-02]: CSV-native GTFS parser instead of gtfs-structures crate -- avoids heavy dependency, handles non-standard HCMC data
+- [06-02]: Bus stop proximity threshold of 5m for should_stop detection
+- [06-02]: Passenger counts caller-provided (stochastic via RNG), not generated inside BusState
 - [06-03]: SignalController trait takes &[DetectorReading] in tick() -- fixed-time ignores, actuated consumes
 - [06-03]: ActuatedController uses explicit amber state machine for precise gap-out control
 - [06-03]: AdaptiveController redistributes green only at cycle boundaries, not mid-cycle
