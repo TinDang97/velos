@@ -6,4 +6,5 @@ authors.workspace = true
 license.workspace = true
 
 [dependencies]
+bytemuck = { workspace = true }
 thiserror = { workspace = true }
