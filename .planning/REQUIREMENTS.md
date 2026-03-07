@@ -64,9 +64,9 @@ Prove VELOS can replace SUMO: reimplement all core SUMO features, add agent inte
 
 - [x] **SIG-01**: Actuated signal control with loop detector-triggered phase transitions
 - [x] **SIG-02**: Adaptive signal control with demand-responsive timing optimization
-- [ ] **SIG-03**: SPaT (Signal Phase and Timing) broadcast to agents within range for signal-aware driving
-- [ ] **SIG-04**: Signal priority request from buses and emergency vehicles
-- [ ] **SIG-05**: Traffic sign interaction: speed limits, stop/yield, no-turn restrictions, school zones affect agent speed targets and cost function
+- [x] **SIG-03**: SPaT (Signal Phase and Timing) broadcast to agents within range for signal-aware driving
+- [x] **SIG-04**: Signal priority request from buses and emergency vehicles
+- [x] **SIG-05**: Traffic sign interaction: speed limits, stop/yield, no-turn restrictions, school zones affect agent speed targets and cost function
 
 ## v2 Requirements
 
@@ -148,9 +148,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 | AGT-08 | Phase 6 | Complete |
 | SIG-01 | Phase 6 | Complete |
 | SIG-02 | Phase 6 | Complete |
-| SIG-03 | Phase 6 | Pending |
-| SIG-04 | Phase 6 | Pending |
-| SIG-05 | Phase 6 | Pending |
+| SIG-03 | Phase 6 | Complete |
+| SIG-04 | Phase 6 | Complete |
+| SIG-05 | Phase 6 | Complete |
 | INT-01 | Phase 7 | Pending |
 | INT-02 | Phase 7 | Pending |
 | INT-03 | Phase 7 | Pending |

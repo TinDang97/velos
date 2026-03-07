@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: SUMO Replacement Engine
 status: completed
-stopped_at: Completed 06-07-PLAN.md
-last_updated: "2026-03-07T14:49:55.713Z"
-last_activity: 2026-03-07 -- Completed Plan 06-07 (Mesoscopic queue model)
+stopped_at: Completed 06-05-PLAN.md
+last_updated: "2026-03-07T14:53:34.680Z"
+last_activity: 2026-03-07 -- Completed Plan 06-05 (V2I communication and traffic signs)
 progress:
   total_phases: 3
   completed_phases: 1
   total_plans: 13
-  completed_plans: 11
+  completed_plans: 12
   percent: 85
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-03-07)
 Phase: 6 of 7 (Agent Models & Signal Control) -- IN PROGRESS
 Plan: 07 complete -- Mesoscopic queue model
 Status: Plan 06-07 complete, phase 6 complete
-Last activity: 2026-03-07 -- Completed Plan 06-07 (Mesoscopic queue model)
+Last activity: 2026-03-07 -- Completed Plan 06-05 (V2I communication and traffic signs)
 
 Progress: [█████████░] 85%
 
@@ -79,6 +79,9 @@ Recent decisions affecting current work:
 - [06-07]: BufferZone::should_insert uses static thresholds (100m distance, 2.0 m/s speed diff)
 - [06-07]: smoothstep (3x^2-2x^3) for C1-continuous buffer zone IDM interpolation
 - [Phase 06]: BPR beta fast-path multiplication for beta=4.0, powf fallback for non-standard
+- [Phase 06]: [06-05]: GLOSA minimum practical speed 3.0 m/s -- below this agent stops and waits
+- [Phase 06]: [06-05]: School zone time-window enforcement on CPU; GPU always applies reduced speed for signs in buffer
+- [Phase 06]: [06-05]: Sign buffer at binding 6, WaveFrontParams extended to 32 bytes with sign_count and sim_time
 
 ### Pending Todos
 
@@ -93,6 +96,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-07T14:49:49.865Z
-Stopped at: Completed 06-07-PLAN.md
+Last session: 2026-03-07T14:53:34.678Z
+Stopped at: Completed 06-05-PLAN.md
 Resume file: None
