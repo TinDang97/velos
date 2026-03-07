@@ -113,21 +113,28 @@ pub fn contract_graph(
     // Build CSR format indexed by rank
     // Forward star: edges going up from each rank
     // Backward star: edges coming down to each rank (stored as "I can reach rank X going down")
-    let mut forward_adj: Vec<Vec<(u32, Option<u32>)>> = vec![vec![]; node_count];
+    //
+    // Each cch_edge has an index in `cch_edges`; we track the mapping from
+    // cch_edges index to final CSR forward position so `original_edge_to_cch`
+    // remains correct after sorting.
+    let mut forward_adj: Vec<Vec<(u32, Option<u32>, usize)>> = vec![vec![]; node_count];
     let mut backward_adj: Vec<Vec<(u32, Option<u32>)>> = vec![vec![]; node_count];
 
-    for &(low_rank, high_rank, middle) in &cch_edges {
-        forward_adj[low_rank as usize].push((high_rank, middle));
+    for (cch_idx, &(low_rank, high_rank, middle)) in cch_edges.iter().enumerate() {
+        forward_adj[low_rank as usize].push((high_rank, middle, cch_idx));
         backward_adj[high_rank as usize].push((low_rank, middle));
     }
 
     // Sort adjacency lists for deterministic CSR
     for list in forward_adj.iter_mut() {
-        list.sort_by_key(|&(target, _)| target);
+        list.sort_by_key(|&(target, _, _)| target);
     }
     for list in backward_adj.iter_mut() {
         list.sort_by_key(|&(source, _)| source);
     }
+
+    // Build mapping from cch_edges index to final forward CSR position
+    let mut cch_idx_to_csr_pos: Vec<usize> = vec![0; cch_edges.len()];
 
     // Build forward CSR
     let mut forward_head = Vec::new();
@@ -136,12 +143,19 @@ pub fn contract_graph(
 
     for adj_list in forward_adj.iter() {
         forward_first_out.push(forward_head.len() as u32);
-        for &(target, middle) in adj_list {
+        for &(target, middle, cch_idx) in adj_list {
+            let csr_pos = forward_head.len();
+            cch_idx_to_csr_pos[cch_idx] = csr_pos;
             forward_head.push(target);
             forward_shortcut_middle.push(middle);
         }
     }
     forward_first_out.push(forward_head.len() as u32);
+
+    // Remap original_edge_to_cch through the cch_idx -> csr_pos mapping
+    for entry in original_edge_to_cch.iter_mut() {
+        *entry = cch_idx_to_csr_pos[*entry];
+    }
 
     // Build backward CSR
     let mut backward_head = Vec::new();

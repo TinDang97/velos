@@ -8,6 +8,7 @@
 //! 2. **Contraction** -- process nodes in order, adding shortcuts
 
 pub mod cache;
+pub mod customization;
 pub mod ordering;
 pub mod topology;
 

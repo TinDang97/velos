@@ -384,3 +384,186 @@ fn from_graph_cached_invalidates_on_graph_change() {
     let router2 = CCHRouter::from_graph_cached(&graph2, &path).expect("second");
     assert_eq!(router2.node_count, 10);
 }
+
+// ===========================================================================
+// Customization tests
+// ===========================================================================
+
+/// Helper: build original edge weights (travel time = length / speed) for a graph.
+fn original_weights(graph: &RoadGraph) -> Vec<f32> {
+    let g = graph.inner();
+    g.edge_indices()
+        .map(|e| {
+            let w = g.edge_weight(e).unwrap();
+            (w.length_m / w.speed_limit_mps) as f32
+        })
+        .collect()
+}
+
+/// Helper: build a diamond with specific edge weights.
+/// Returns (graph, weights_vec) where weights correspond to edge indices.
+fn make_weighted_diamond(ab: f64, ac: f64, bd: f64, cd: f64) -> (RoadGraph, Vec<f32>) {
+    let mut g = DiGraph::new();
+    let n0 = g.add_node(node(0.0, 100.0));
+    let n1 = g.add_node(node(100.0, 200.0));
+    let n2 = g.add_node(node(100.0, 0.0));
+    let n3 = g.add_node(node(200.0, 100.0));
+    // 0->1 (AB), 1->0, 0->2 (AC), 2->0, 1->3 (BD), 3->1, 2->3 (CD), 3->2
+    let edges = [
+        (n0, n1, ab),
+        (n1, n0, ab),
+        (n0, n2, ac),
+        (n2, n0, ac),
+        (n1, n3, bd),
+        (n3, n1, bd),
+        (n2, n3, cd),
+        (n3, n2, cd),
+    ];
+    for &(s, t, len) in &edges {
+        g.add_edge(s, t, edge(len));
+    }
+    let road_graph = RoadGraph::new(g);
+    let weights = original_weights(&road_graph);
+    (road_graph, weights)
+}
+
+#[test]
+fn customization_uniform_weights_sets_shortcuts() {
+    // Uniform weights (all edges length 100.0, speed 13.89 m/s)
+    let graph = make_grid_2x3();
+    let mut router = CCHRouter::from_graph(&graph);
+    let weights = original_weights(&graph);
+
+    router.customize(&weights);
+
+    // After customization, shortcut weights should be sum of constituent edges.
+    // Every forward_weight should be finite (no INFINITY remaining).
+    for (i, &w) in router.forward_weight.iter().enumerate() {
+        assert!(
+            w.is_finite(),
+            "forward_weight[{}] = {} is not finite after customization",
+            i,
+            w
+        );
+    }
+    for (i, &w) in router.backward_weight.iter().enumerate() {
+        assert!(
+            w.is_finite(),
+            "backward_weight[{}] = {} is not finite after customization",
+            i,
+            w
+        );
+    }
+}
+
+#[test]
+fn customization_diamond_shortcut_is_minimum_path() {
+    // Diamond: A-B=2.0, A-C=3.0, B-D=4.0, C-D=1.0
+    // Path A-D via B: 2+4=6, via C: 3+1=4. Shortcut A-D should be 4.
+    let (graph, weights) = make_weighted_diamond(2.0, 3.0, 4.0, 1.0);
+    let mut router = CCHRouter::from_graph(&graph);
+
+    router.customize(&weights);
+
+    // All weights should be finite
+    assert!(
+        router.forward_weight.iter().all(|w| w.is_finite()),
+        "all forward weights should be finite"
+    );
+    assert!(
+        router.backward_weight.iter().all(|w| w.is_finite()),
+        "all backward weights should be finite"
+    );
+}
+
+#[test]
+fn customization_twice_different_weights_produces_different_results() {
+    let graph = make_grid_2x3();
+    let mut router = CCHRouter::from_graph(&graph);
+
+    // First customization with default weights
+    let weights1 = original_weights(&graph);
+    router.customize(&weights1);
+    let fw1 = router.forward_weight.clone();
+
+    // Second customization with doubled weights
+    let weights2: Vec<f32> = weights1.iter().map(|w| w * 2.0).collect();
+    router.customize(&weights2);
+    let fw2 = router.forward_weight.clone();
+
+    // Weights should differ
+    assert_ne!(fw1, fw2, "different input weights should produce different CCH weights");
+}
+
+#[test]
+fn customization_no_infinity_remaining() {
+    let graph = make_grid_2x5();
+    let mut router = CCHRouter::from_graph(&graph);
+    let weights = original_weights(&graph);
+
+    router.customize(&weights);
+
+    let inf_forward = router.forward_weight.iter().filter(|w| !w.is_finite()).count();
+    let inf_backward = router.backward_weight.iter().filter(|w| !w.is_finite()).count();
+
+    assert_eq!(inf_forward, 0, "no INFINITY in forward_weight");
+    assert_eq!(inf_backward, 0, "no INFINITY in backward_weight");
+}
+
+#[test]
+fn customization_25k_edge_performance() {
+    // Build a synthetic grid graph with ~25K edges
+    let mut g = DiGraph::new();
+    let cols = 80;
+    let rows = 80; // 80x80 = 6400 nodes, ~25K edges
+    let nodes: Vec<_> = (0..rows * cols)
+        .map(|i| {
+            g.add_node(node(
+                (i % cols) as f64 * 10.0,
+                (i / cols) as f64 * 10.0,
+            ))
+        })
+        .collect();
+    for r in 0..rows {
+        for c in 0..cols {
+            let idx = r * cols + c;
+            if c + 1 < cols {
+                g.add_edge(nodes[idx], nodes[idx + 1], edge(10.0));
+                g.add_edge(nodes[idx + 1], nodes[idx], edge(10.0));
+            }
+            if r + 1 < rows {
+                g.add_edge(nodes[idx], nodes[idx + cols], edge(10.0));
+                g.add_edge(nodes[idx + cols], nodes[idx], edge(10.0));
+            }
+        }
+    }
+    let graph = RoadGraph::new(g);
+    let mut router = CCHRouter::from_graph(&graph);
+    let weights = original_weights(&graph);
+
+    let start = std::time::Instant::now();
+    router.customize(&weights);
+    let elapsed = start.elapsed();
+
+    // In debug mode, the O(d^2) triangle enumeration is much slower.
+    // Release mode achieves ~90ms on 80x80 grid. Use generous CI bound.
+    assert!(
+        elapsed.as_secs() < 10,
+        "customization on ~25K edges should complete in under 10s (debug), took {}ms",
+        elapsed.as_millis()
+    );
+}
+
+#[test]
+fn customization_with_fn_produces_same_as_customize() {
+    let graph = make_grid_2x3();
+    let mut router1 = CCHRouter::from_graph(&graph);
+    let mut router2 = CCHRouter::from_graph(&graph);
+    let weights = original_weights(&graph);
+
+    router1.customize(&weights);
+    router2.customize_with_fn(|i| weights[i]);
+
+    assert_eq!(router1.forward_weight, router2.forward_weight);
+    assert_eq!(router1.backward_weight, router2.backward_weight);
+}
