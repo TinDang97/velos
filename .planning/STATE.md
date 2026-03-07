@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: completed
-stopped_at: Completed 03-02-PLAN.md -- Phase 3 and VELOS POC milestone complete
-last_updated: "2026-03-06T17:41:32.095Z"
-last_activity: "2026-03-07 -- Plan 03-02 complete: sublane + social force integration with visual verification"
+status: in-progress
+stopped_at: Completed 04-02-PLAN.md
+last_updated: "2026-03-07T01:30:00.000Z"
+last_activity: "2026-03-07 -- Plan 04-02 complete: motorbike jam fix + spatial query optimization"
 progress:
-  total_phases: 3
+  total_phases: 4
   completed_phases: 3
-  total_plans: 8
-  completed_plans: 8
-  percent: 100
+  total_plans: 11
+  completed_plans: 10
+  percent: 91
 ---
 
 # Project State
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-06)
 
 **Core value:** Motorbikes move realistically through traffic using continuous sublane positioning -- not forced into discrete lanes like Western traffic models
-**Current focus:** VELOS POC milestone complete
+**Current focus:** Phase 4 -- MOBIL wiring, jam fix, verification
 
 ## Current Position
 
-Phase: 3 of 3 (Motorbike Sublane & Pedestrians) -- COMPLETE
-Plan: 2 of 2 (completed: 03-02)
-Status: All phases complete -- VELOS POC milestone delivered
-Last activity: 2026-03-07 -- Plan 03-02 complete: sublane + social force integration with visual verification
+Phase: 4 of 4 (MOBIL Wiring + Motorbike Jam Fix + Performance)
+Plan: 3 of 3 (completed: 04-01, 04-02)
+Status: Plan 04-02 complete, proceeding to 04-03
+Last activity: 2026-03-07 -- Plan 04-02 complete: motorbike jam fix + spatial query optimization
 
-Progress: [██████████] 100% (Overall)
+Progress: [█████████ ] 91% (Overall)
 
 ## Performance Metrics
 
@@ -60,6 +60,8 @@ Progress: [██████████] 100% (Overall)
 | 02-road-network-vehicle-models-egui | P01 | 7min | 2 tasks | 15 files |
 | 03-motorbike-sublane-pedestrians | P01 | 5min | 2 tasks (4 TDD commits) | 6 files |
 | 03-motorbike-sublane-pedestrians | P02 | 42min | 2 tasks + 2 fixes | 7 files |
+| 04-mobil-wiring-phase2-verification | P01 | 9min | 2 tasks + 2 fixes | 8 files |
+| 04-mobil-wiring-phase2-verification | P02 | 12min | 2 tasks + 2 fixes | 6 files |
 
 ## Accumulated Context
 
@@ -97,10 +99,19 @@ Recent decisions affecting current work:
 - [Phase 03]: AgentSnapshot with sequential IDs + position-proximity self-skip for spatial queries
 - [Phase 03]: SimWorld impl split across 5 files to keep all under 700 lines
 - [Phase 03]: Pedestrians walk on sidewalk (5m offset from road centerline)
+- [Phase 04 P01]: MOBIL wiring extracted into sim_mobil.rs to keep sim.rs under 700 lines
+- [Phase 04 P01]: Linear drift interpolation over 2 seconds for lane changes (constant lateral speed)
+- [Phase 04 P01]: Cars spawn with LateralOffset at lane 0 center to prevent position flicker
+- [Phase 04 P01]: LaneChangeState attach/remove lifecycle: spawn on MOBIL accept, remove on drift completion or edge transition
+- [Phase 04 P02]: IDM leader lateral threshold 0.8m (one motorbike width + margin) instead of 1.5m
+- [Phase 04 P02]: Speed gate < 0.5 m/s on red-light swarming override to enable post-green dispersal
+- [Phase 04 P02]: Spatial query radius 6m with 20-neighbor cap for motorbikes (was 10m uncapped)
+- [Phase 04 P02]: Pedestrian spatial radius 3m (was 5m)
+- [Phase 04 P02]: Heading-based filter in AgentSnapshot to prevent head-on motorbike deadlocks
 
 ### Pending Todos
 
-None -- all plans complete.
+Plan 04-03 remaining: Phase 2 verification document and documentation fixes.
 
 ### Blockers/Concerns
 
@@ -109,6 +120,6 @@ None -- all plans complete.
 
 ## Session Continuity
 
-Last session: 2026-03-06T17:34:15.287Z
-Stopped at: Completed 03-02-PLAN.md -- Phase 3 and VELOS POC milestone complete
-Resume file: None
+Last session: 2026-03-07T01:30:00.000Z
+Stopped at: Completed 04-02-PLAN.md
+Resume file: .planning/phases/04-mobil-wiring-phase2-verification/04-03-PLAN.md
