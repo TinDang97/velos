@@ -10,6 +10,7 @@
 pub mod cache;
 pub mod customization;
 pub mod ordering;
+pub mod query;
 pub mod topology;
 
 use crate::error::NetError;

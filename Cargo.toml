@@ -30,4 +30,5 @@ serde = { version = "1", features = ["derive"] }
 toml = "0.8"
 postcard = { version = "1", features = ["alloc"] }
 arc-swap = "1"
+rayon = "1"
 tempfile = "3"

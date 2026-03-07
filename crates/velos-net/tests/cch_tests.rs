@@ -1,12 +1,13 @@
 //! Tests for CCH (Customizable Contraction Hierarchies) module.
 //!
 //! Covers: ordering validity, contraction correctness, shortcut properties,
-//! cache roundtrip, and cache invalidation.
+//! cache roundtrip, cache invalidation, weight customization, and queries.
 
-use petgraph::graph::DiGraph;
+use petgraph::graph::{DiGraph, NodeIndex};
 use std::collections::HashSet;
 use velos_net::cch::CCHRouter;
 use velos_net::graph::{RoadClass, RoadEdge, RoadGraph, RoadNode};
+use velos_net::routing::find_route;
 
 // ---------------------------------------------------------------------------
 // Helper: build a RoadEdge with given length and default fields
@@ -566,4 +567,225 @@ fn customization_with_fn_produces_same_as_customize() {
 
     assert_eq!(router1.forward_weight, router2.forward_weight);
     assert_eq!(router1.backward_weight, router2.backward_weight);
+}
+
+// ===========================================================================
+// Query tests
+// ===========================================================================
+
+/// Helper: build a customized CCH router from a graph.
+fn build_customized(graph: &RoadGraph) -> CCHRouter {
+    let mut router = CCHRouter::from_graph(graph);
+    let weights = original_weights(graph);
+    router.customize(&weights);
+    router
+}
+
+/// Helper: get A* distance between two nodes (f32 for comparison with CCH).
+fn astar_distance(graph: &RoadGraph, from: usize, to: usize) -> Option<f32> {
+    find_route(graph, NodeIndex::new(from), NodeIndex::new(to))
+        .ok()
+        .map(|(_, cost)| cost as f32)
+}
+
+#[test]
+fn query_diamond_matches_astar() {
+    let graph = make_diamond();
+    let router = build_customized(&graph);
+
+    // Test all pairs
+    for s in 0..4u32 {
+        for t in 0..4u32 {
+            let cch_cost = router.query(s, t);
+            let astar_cost = astar_distance(&graph, s as usize, t as usize);
+            match (cch_cost, astar_cost) {
+                (Some(c), Some(a)) => {
+                    assert!(
+                        (c - a).abs() < 0.01,
+                        "CCH({}->{}) = {} != A* = {}",
+                        s, t, c, a
+                    );
+                }
+                (None, None) => {} // both agree no path
+                _ => panic!(
+                    "CCH({}->{}) = {:?}, A* = {:?} -- mismatch",
+                    s, t, cch_cost, astar_cost
+                ),
+            }
+        }
+    }
+}
+
+#[test]
+fn query_grid_matches_astar() {
+    let graph = make_grid_2x5();
+    let router = build_customized(&graph);
+
+    // Test all pairs on 10-node grid
+    for s in 0..10u32 {
+        for t in 0..10u32 {
+            let cch_cost = router.query(s, t);
+            let astar_cost = astar_distance(&graph, s as usize, t as usize);
+            match (cch_cost, astar_cost) {
+                (Some(c), Some(a)) => {
+                    assert!(
+                        (c - a).abs() < 0.1,
+                        "CCH({}->{}) = {} != A* = {}",
+                        s, t, c, a
+                    );
+                }
+                (None, None) => {}
+                _ => panic!(
+                    "CCH({}->{}) = {:?}, A* = {:?}",
+                    s, t, cch_cost, astar_cost
+                ),
+            }
+        }
+    }
+}
+
+#[test]
+fn query_unreachable_returns_none() {
+    // Build two disconnected components
+    let mut g = DiGraph::new();
+    let n0 = g.add_node(node(0.0, 0.0));
+    let n1 = g.add_node(node(100.0, 0.0));
+    let n2 = g.add_node(node(200.0, 0.0));
+    let n3 = g.add_node(node(300.0, 0.0));
+    // Component 1: 0 <-> 1
+    g.add_edge(n0, n1, edge(100.0));
+    g.add_edge(n1, n0, edge(100.0));
+    // Component 2: 2 <-> 3
+    g.add_edge(n2, n3, edge(100.0));
+    g.add_edge(n3, n2, edge(100.0));
+
+    let graph = RoadGraph::new(g);
+    let router = build_customized(&graph);
+
+    assert!(router.query(0, 2).is_none(), "0->2 should be unreachable");
+    assert!(router.query(0, 3).is_none(), "0->3 should be unreachable");
+    assert!(router.query(1, 2).is_none(), "1->2 should be unreachable");
+}
+
+#[test]
+fn query_source_equals_target_returns_zero() {
+    let graph = make_diamond();
+    let router = build_customized(&graph);
+
+    for n in 0..4u32 {
+        let cost = router.query(n, n);
+        assert_eq!(cost, Some(0.0), "query({}, {}) should be 0.0", n, n);
+    }
+}
+
+#[test]
+fn query_with_path_returns_valid_sequence() {
+    let graph = make_grid_2x5();
+    let router = build_customized(&graph);
+
+    // Query from corner 0 to corner 9
+    let result = router.query_with_path(0, 9);
+    assert!(result.is_some(), "path from 0 to 9 should exist");
+    let (cost, path) = result.unwrap();
+    assert!(cost > 0.0, "cost should be positive");
+    assert_eq!(*path.first().unwrap(), 0, "path should start at 0");
+    assert_eq!(*path.last().unwrap(), 9, "path should end at 9");
+
+    // Verify path is connected: consecutive nodes should be neighbors
+    let g = graph.inner();
+    for w in path.windows(2) {
+        let from = NodeIndex::new(w[0] as usize);
+        let to = NodeIndex::new(w[1] as usize);
+        assert!(
+            g.find_edge(from, to).is_some(),
+            "edge {}->{} should exist in graph",
+            w[0], w[1]
+        );
+    }
+}
+
+#[test]
+fn query_batch_parallel_500() {
+    // Build a synthetic grid with ~25K edges
+    let mut g = DiGraph::new();
+    let cols = 80;
+    let rows = 80;
+    let nodes: Vec<_> = (0..rows * cols)
+        .map(|i| {
+            g.add_node(node(
+                (i % cols) as f64 * 10.0,
+                (i / cols) as f64 * 10.0,
+            ))
+        })
+        .collect();
+    for r in 0..rows {
+        for c in 0..cols {
+            let idx = r * cols + c;
+            if c + 1 < cols {
+                g.add_edge(nodes[idx], nodes[idx + 1], edge(10.0));
+                g.add_edge(nodes[idx + 1], nodes[idx], edge(10.0));
+            }
+            if r + 1 < rows {
+                g.add_edge(nodes[idx], nodes[idx + cols], edge(10.0));
+                g.add_edge(nodes[idx + cols], nodes[idx], edge(10.0));
+            }
+        }
+    }
+    let graph = RoadGraph::new(g);
+    let router = build_customized(&graph);
+
+    // Generate 500 random-ish pairs
+    let n = (rows * cols) as u32;
+    let pairs: Vec<(u32, u32)> = (0..500)
+        .map(|i| {
+            let s = (i * 7 + 3) % n;
+            let t = (i * 13 + 17) % n;
+            (s, t)
+        })
+        .collect();
+
+    let results = router.query_batch(&pairs);
+
+    assert_eq!(results.len(), 500);
+    // All queries should return Some (connected grid)
+    for (i, result) in results.iter().enumerate() {
+        let (s, t) = pairs[i];
+        if s == t {
+            assert_eq!(*result, Some(0.0), "self-query {} should be 0", s);
+        } else {
+            assert!(
+                result.is_some(),
+                "query({}, {}) should find path on connected grid",
+                s, t
+            );
+            assert!(
+                result.unwrap() > 0.0,
+                "query({}, {}) cost should be positive",
+                s, t
+            );
+        }
+    }
+}
+
+#[test]
+fn query_changes_after_recustomization() {
+    let graph = make_grid_2x3();
+    let weights1 = original_weights(&graph);
+    let weights2: Vec<f32> = weights1.iter().map(|w| w * 2.0).collect();
+
+    let mut router = CCHRouter::from_graph(&graph);
+
+    // First customization
+    router.customize(&weights1);
+    let cost1 = router.query(0, 5).expect("path should exist");
+
+    // Second customization with doubled weights
+    router.customize(&weights2);
+    let cost2 = router.query(0, 5).expect("path should exist");
+
+    assert!(
+        (cost2 - cost1 * 2.0).abs() < 0.1,
+        "doubled weights should roughly double cost: {} vs {}",
+        cost2, cost1 * 2.0
+    );
 }
