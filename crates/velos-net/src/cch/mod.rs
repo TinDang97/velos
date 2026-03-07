@@ -50,6 +50,51 @@ pub struct CCHRouter {
     pub edge_count: usize,
 }
 
+/// Precomputed lookup from original edge ID to (source_node, target_node).
+///
+/// Built from a `RoadGraph` at startup for O(1) edge-to-node mapping
+/// during reroute evaluation.
+#[derive(Debug, Clone)]
+pub struct EdgeNodeMap {
+    /// For each edge index: (source_node_id, target_node_id).
+    endpoints: Vec<(u32, u32)>,
+}
+
+impl EdgeNodeMap {
+    /// Build the map from a `RoadGraph`.
+    pub fn from_graph(graph: &RoadGraph) -> Self {
+        use petgraph::visit::EdgeRef;
+        let g = graph.inner();
+        let edge_count = g.edge_count();
+        let mut endpoints = vec![(0u32, 0u32); edge_count];
+        for edge_ref in g.edge_references() {
+            let idx = edge_ref.id().index();
+            if idx < edge_count {
+                endpoints[idx] = (
+                    edge_ref.source().index() as u32,
+                    edge_ref.target().index() as u32,
+                );
+            }
+        }
+        Self { endpoints }
+    }
+
+    /// Look up the (source, target) node pair for an edge.
+    pub fn get(&self, edge_id: u32) -> Option<(u32, u32)> {
+        self.endpoints.get(edge_id as usize).copied()
+    }
+
+    /// Number of edges in the map.
+    pub fn len(&self) -> usize {
+        self.endpoints.len()
+    }
+
+    /// Whether the map is empty.
+    pub fn is_empty(&self) -> bool {
+        self.endpoints.is_empty()
+    }
+}
+
 impl CCHRouter {
     /// Build a CCH from a `RoadGraph`.
     ///

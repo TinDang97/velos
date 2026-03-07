@@ -33,6 +33,7 @@ use crate::compute::{sort_agents_by_lane, ComputeDispatcher};
 use crate::multi_gpu::MultiGpuScheduler;
 use crate::partition::partition_network;
 use crate::renderer::AgentInstance;
+use crate::sim_reroute::RerouteState;
 use crate::sim_snapshot::AgentSnapshot;
 
 /// Partition mode for multi-GPU support.
@@ -114,6 +115,8 @@ pub struct SimWorld {
     pub(crate) social_force_params: SocialForceParams,
     /// Partition mode: Single (default) or Multi for logical multi-GPU partitions.
     pub partition_mode: PartitionMode,
+    /// Reroute evaluation subsystem state.
+    pub(crate) reroute: RerouteState,
 }
 
 impl SimWorld {
@@ -185,6 +188,7 @@ impl SimWorld {
             sublane_params: SublaneParams::default(),
             social_force_params: SocialForceParams::default(),
             partition_mode: PartitionMode::Single,
+            reroute: RerouteState::new(),
         }
     }
 
@@ -213,6 +217,7 @@ impl SimWorld {
         self.sublane_params = SublaneParams::default();
         self.social_force_params = SocialForceParams::default();
         self.partition_mode = PartitionMode::Single;
+        self.reroute = RerouteState::new();
         for (_, ctrl) in &mut self.signal_controllers {
             ctrl.reset();
         }

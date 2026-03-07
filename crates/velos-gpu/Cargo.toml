@@ -31,6 +31,7 @@ velos-net = { path = "../velos-net" }
 velos-vehicle = { path = "../velos-vehicle" }
 velos-demand = { path = "../velos-demand" }
 velos-signal = { path = "../velos-signal" }
+velos-predict = { path = "../velos-predict" }
 rand = { workspace = true }
 petgraph = { workspace = true }
 rayon = "1"
