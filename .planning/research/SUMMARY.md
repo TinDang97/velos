@@ -1,196 +1,191 @@
 # Project Research Summary
 
-**Project:** VELOS
-**Domain:** GPU-accelerated traffic microsimulation (motorbike-native, Southeast Asian mixed traffic, macOS/Metal desktop)
-**Researched:** 2026-03-06
-**Confidence:** MEDIUM-HIGH
+**Project:** VELOS v1.1 Digital Twin Platform
+**Domain:** GPU-accelerated traffic microsimulation -- scaling from desktop POC to web-based digital twin platform
+**Researched:** 2026-03-07
+**Confidence:** HIGH
 
 ## Executive Summary
 
-VELOS is a GPU-accelerated traffic microsimulation engine targeting Ho Chi Minh City's motorbike-dominant mixed traffic. The core technical bet is running agent updates via wgpu/WGSL compute shaders on Metal, achieving real-time performance at scales (280K agents) that CPU-based competitors (SUMO, VISSIM, Aimsun) cannot match. The product's primary differentiator -- continuous sublane lateral positioning for motorbikes -- fills a confirmed gap: no existing simulator handles Southeast Asian motorcycle swarm behavior natively. The recommended stack (Rust nightly + wgpu 28 + hecs + Tauri v2) is well-supported on all fronts except the Tauri+wgpu surface integration, which has a documented flickering issue and no production-quality pattern.
+VELOS v1.1 transforms a 1.5K-agent desktop POC (egui, CPU physics, A* routing) into a 280K-agent web-based digital twin platform with multi-GPU compute, CCH dynamic routing, prediction ensemble, gRPC/REST/WebSocket API, deck.gl visualization, and Docker deployment. This is a well-defined migration path from a validated v1.0 codebase (6 crates, 7,802 LOC, 185 passing tests) to a 14-crate multi-service architecture. The domain is mature (SUMO/VISSIM/Aimsun are established competitors), the target stack is verified (all Rust crates confirmed on crates.io, frontend packages on npm), and the architecture documents are thorough. The core differentiator -- GPU-accelerated microscopic simulation with native motorbike sublane at 200K+ scale -- has no direct open-source competitor.
 
-The recommended build approach is spike-first: validate three high-risk integrations (wgpu compute on Metal, Tauri+wgpu dual-surface rendering, fixed-point arithmetic in WGSL) before writing any simulation logic. The architecture follows an ECS-to-GPU pipeline where hecs components are projected into SoA storage buffers for compute dispatch, with a per-lane wave-front (Gauss-Seidel) pattern for car-following. This pattern is theoretically sound but has no direct WGSL precedent and requires careful workgroupBarrier handling.
+The recommended approach is incremental migration driven by three technical spikes (wave-front GPU dispatch, multi-GPU adapter enumeration, CCH pathfinding) that produce binary GO/NO-GO decisions before committing to expensive implementation. The critical path runs through the "God Crate" split of velos-gpu (monolithic desktop binary to headless simulation library), then GPU engine upgrades (wave-front dispatch, multi-GPU partitioning), then service layer (API server, WebSocket streaming, web visualization). The web platform (deck.gl dashboard, API server) can be built in parallel with engine work and is NOT on the critical path.
 
-The top risks are: (1) Tauri+wgpu surface conflict forcing a two-window or pure-winit fallback, (2) WGSL's lack of 64-bit integers making fixed-point multiplication fragile with overflow potential, (3) IDM numerical instabilities at discrete timesteps producing negative velocities, and (4) sublane lateral dynamics being timestep-dependent (a known SUMO bug that VELOS must avoid repeating). All four have concrete mitigation strategies and should be addressed in the first two development phases. The CCH pathfinding implementation is significant custom engineering with no off-the-shelf Rust crate available, but the algorithm is well-documented academically.
+The top risks are: (1) GPU compute is "proven but not wired" into v1.0's sim loop -- the very first task must be GPU cutover, not maintaining a parallel CPU path; (2) wgpu multi-adapter support for compute is untested at scale and may not work, requiring fallback to single-GPU 200K agents; (3) wave-front dispatch may starve GPU occupancy at 5.6 agents/lane average, requiring hybrid dispatch; (4) deck.gl CPU attribute generation blocks rendering at 280K points without server-side binary attribute packing; (5) fixed-point arithmetic performance penalty is likely 40-80% (not the estimated 20%) and should be deferred. All five risks have documented fallback strategies with LOW-MEDIUM recovery cost.
 
 ## Key Findings
 
 ### Recommended Stack
 
-The stack centers on Rust nightly (for `portable_simd` in fixed-point host code) with wgpu 28.0 for Metal GPU compute and rendering. Tauri v2 provides the desktop shell with a React/Vite webview dashboard. The simulation is CPU-orchestrated (hecs ECS + rayon for parallelism) with GPU compute for agent state updates.
+The v1.0 validated stack (Rust nightly, wgpu, hecs, petgraph, rstar) is retained. v1.1 adds approximately 25 new Rust crates and a TypeScript/React frontend. All versions are verified on crates.io/npm. The stack divides cleanly into: API server layer (tonic 0.14 + axum 0.8, sharing tokio runtime), data storage (parquet/arrow 57, flatbuffers 25.12 for WebSocket binary frames), prediction (ndarray 0.17, arc-swap 1.8), calibration (argmin 0.10), observability (tracing 0.1, metrics 0.24 + Prometheus exporter), and frontend (deck.gl 9.2, MapLibre 5.19, React 19, Vite 6).
 
 **Core technologies:**
-- **Rust nightly + wgpu 28.0:** GPU compute + rendering via Metal backend. WGSL shaders for all compute. Pin nightly date in `rust-toolchain.toml`.
-- **hecs 0.11:** Minimal ECS -- no scheduler opinions, perfect for a custom simulation tick loop.
-- **Tauri 2.10.x:** Native macOS desktop shell. Supports wgpu surface alongside webview, but with known integration issues.
-- **postcard 1.1.3:** Binary serialization for checkpoints. Replaces bincode (unmaintained, RUSTSEC-2025-0141).
-- **Custom CCH:** No production Rust CCH crate exists with dynamic weight customization. Must be built in-house using petgraph + rayon.
-- **rayon 1.11 + tokio 1.47 LTS:** rayon for CPU data-parallelism (OSM parsing, sorting). tokio for async IO only (Tauri, API server).
+- **tonic 0.14 + axum 0.8:** gRPC + REST/WebSocket on shared tokio runtime -- the platform unlock that transforms a desktop app into a programmable service
+- **parquet/arrow 57:** Columnar checkpoint/export matching ECS SoA pattern, readable by Python/DuckDB without custom deserialization
+- **flatbuffers 25.12:** Zero-copy WebSocket frames (8 bytes/agent) for 10Hz streaming to deck.gl -- protobuf requires full deserialization
+- **deck.gl 9.2 + MapLibre 5.19:** GPU-accelerated 2D visualization handling 200K+ points at 60 FPS via WebGL instancing
+- **redis 1.0:** Pub/sub tile-based frame fan-out enabling horizontal WebSocket relay scaling for 100+ viewers
+- **tracing + metrics:** Structured observability replacing v1.0's unstructured logging -- essential for debugging 280K-agent simulations
+- **argmin 0.10:** Bayesian optimization for GEH/RMSE calibration without writing custom optimizers
 
-**Key stack risk:** `portable_simd` is nightly-only. If nightly churn becomes problematic, the `wide` crate on stable Rust is the fallback. Evaluate during spike whether SIMD is actually needed at 1K agent POC scale.
+**Critical exclusions:** No Tauri (web replaces desktop), no Python bridge (Rust-native prediction), no Kubernetes (Docker Compose sufficient), no bincode (RUSTSEC-2025-0141), no Wiedemann 99 (uncalibrated W99 worse than calibrated IDM for HCMC).
 
 ### Expected Features
 
-**Must have (table stakes):**
-- IDM car-following + MOBIL lane-change -- core microsimulation behavior
-- OSM road network import with HCMC-specific edge splitting
-- Fixed-time signal control at intersections
-- OD-based demand with time-of-day profiles
-- Static CCH pathfinding (dynamic weights deferred)
-- Deterministic simulation via fixed-point arithmetic
-- Native wgpu 2D visualization with Tauri desktop shell
+**Must have (table stakes -- P1):**
+- Multi-GPU wave-front dispatch + fixed-point (performance unlock for 280K agents)
+- 5-district HCMC network (25K edges, 15K junctions, network cleaning)
+- gRPC/REST API (platform transformation, non-negotiable for external integration)
+- WebSocket streaming + Redis pub/sub (enables web visualization and multi-viewer)
+- deck.gl 2D visualization (primary web interface)
+- Parquet checkpoint/restart (crash recovery, batch run foundation)
+- Data export (FCD, Parquet, CSV for researcher analysis)
+- Docker Compose deployment (reproducible 7-service stack)
+- Prometheus/Grafana monitoring (operational visibility at scale)
+- PMTiles map tiles (zero-ops base maps)
+- Bus dwell + bicycle agents (complete multi-modal roster)
 
-**Should have (differentiators):**
-- Continuous sublane motorbike model (FixedQ8_8 lateral position) -- THE primary differentiator
-- GPU-accelerated compute dispatch enabling real-time 280K agents
-- HCMC-calibrated default parameters (motorbike v0=40km/h, s0=1.0m, T=0.8s)
-- Fixed-point cross-GPU determinism (unique in the market)
+**Should have (differentiators -- P2):**
+- CCH dynamic pathfinding (3ms weight update, 25x faster than A*, no open-source sim has this)
+- In-process BPR+ETS+historical prediction ensemble (zero-latency, no Python sidecar)
+- GEH/RMSE calibration with Bayesian optimization (model validation for engineering credibility)
+- Pedestrian adaptive GPU workgroups (3-8x speedup for non-uniform density)
+- Scenario DSL + batch runner + MOE comparison (developer experience advantage)
+- HBEFA emissions (policy evaluation for motorbike restriction zones)
 
 **Defer (v2+):**
-- Pedestrian social force model, meso-micro hybrid, dynamic routing + prediction (add after core vehicle validation)
-- Data export (FCD/Parquet/GeoJSON), emissions model, scenario DSL (post-validation)
-- Multi-GPU partitioning, web dashboard (deck.gl), actuated signals (scaling features)
-- W99 car-following, TraCI compatibility, activity-based demand, 3D visualization (anti-features -- do not build)
+- Meso-micro hybrid (likely unnecessary if full-micro handles 280K on 2-4 GPUs within 15ms frame time)
+- CesiumJS 3D visualization (presentation-only, add for stakeholder demos after deck.gl proves the platform)
+- SUMO TraCI compatibility (fundamentally incompatible with GPU-parallel execution)
+- Multi-node distributed simulation (280K fits single-node)
+- Real-time sensor data fusion (massive scope creep, offline calibration sufficient)
+- ML/DL prediction (no training data for HCMC yet)
 
 ### Architecture Approach
 
-The system follows an ECS-to-GPU pipeline: hecs manages agent state on the CPU, components are projected into SoA GPU storage buffers each frame, compute shaders update agent positions/kinematics, and results are read back to the ECS. The per-frame pipeline runs at 10 Hz with a target of <15ms p99 frame time. Crate boundaries mirror simulation subsystems with a strict dependency DAG (velos-gpu and velos-net at the bottom, velos-app at the top).
+The architecture migrates from a monolithic desktop binary (velos-gpu as "God Crate" containing app shell, renderer, simulation loop, GPU compute, and camera) to a multi-service platform with strict separation of concerns. The key decomposition: velos-gpu splits into a pure compute library + velos-sim (headless simulation binary) + velos-api (gRPC/REST/WS server). Pedestrian code extracts from velos-vehicle into velos-pedestrian due to fundamentally different GPU dispatch patterns. The v2 dependency graph has 5 levels: leaf crate (velos-core), Level 1 libraries (net, vehicle, signal, demand), Level 2 libraries (gpu, pedestrian, predict, meso, output, calibrate), Level 3 integration (scene), Level 4 binaries (sim, api), and a separate TypeScript workspace (viz).
 
 **Major components:**
-1. **velos-gpu** -- wgpu device management, compute pipeline registry, buffer pools, WGSL shader hosting
-2. **velos-net** -- Road graph (petgraph), OSM import (osmpbf), CCH pathfinding, rstar spatial index
-3. **velos-core** -- hecs ECS world, frame scheduler, time control, entity-to-GPU index mapping
-4. **velos-vehicle** -- IDM + MOBIL + motorbike sublane model (WGSL compute shaders + Rust reference)
-5. **velos-app** -- Tauri binary crate, IPC command handlers, wgpu render loop
+1. **velos-sim** -- Headless simulation binary owning the frame pipeline; publishes to Redis; exposes gRPC for control
+2. **velos-gpu** -- Pure compute library (device management, multi-GPU partitioning, buffer pools, shader registry); no rendering
+3. **velos-api** -- gRPC + REST + WebSocket relay consuming Redis pub/sub tile channels; stateless, horizontally scalable
+4. **velos-viz** -- React/TypeScript deck.gl dashboard consuming WebSocket binary frames + REST queries
+5. **velos-core** -- ECS world (hecs), frame scheduler, time control, checkpoint to Parquet, shared component types
+6. **velos-net** -- Road graph, OSM import, CCH pathfinding (replacing A*), spatial index, edge weight management
 
 ### Critical Pitfalls
 
-1. **Tauri+wgpu surface conflict** -- Use separate windows (simulation + dashboard) for POC. Single-window overlay is unreliable. Validate in Phase 1 spike before writing simulation code.
-2. **WGSL no-i64 fixed-point overflow** -- Q16.16 multiply overflows i32 intermediates. Use u32, clamp inputs, consider Q20.12, and maintain an f32+@invariant fallback. Test with exhaustive edge cases in Phase 1.
-3. **IDM negative velocity cascade** -- Add ballistic stopping guard (compute exact stopping time within timestep). Enforce gap floor. Validate with approach-to-stop test scenarios before GPU port.
-4. **wgpu buffer mapping deadlock** -- Establish poll discipline from day one. Call `device.poll()` after every `queue.submit()`. Use `StagingBelt` for per-frame uploads. Never skip double-buffering.
-5. **Sublane timestep dependence** -- Express all lateral dynamics as rates (not per-step increments), use `sqrt(dt)` scaling for stochastic terms. Validate at multiple timesteps (dt=0.05s, 0.1s, 0.2s).
-6. **CCH wrong ordering metric** -- Use topology-only nested dissection, not weighted importance. Verify with adversarial weight reversal tests against Dijkstra ground truth.
+1. **GPU compute not wired into sim loop** -- v1.0's CPU physics is the real driver; GPU is "proven via tests" only. Kill the CPU path immediately in Phase 1. Build a GPU validation compute pass for debugging. Gate G1 on GPU physics, not just GPU rendering.
+
+2. **wgpu multi-adapter may not work for compute** -- WebGPU spec does not expose multi-GPU; wgpu's native multi-adapter is an extension with known platform issues. Run Spike S2 before any multi-GPU code. Design partition abstraction so single-GPU is a trivial specialization (partitions.len() == 1).
+
+3. **Wave-front dispatch may starve GPU occupancy** -- 5.6 agents/lane average means <10% occupancy. Spike S1 must validate >40% of naive parallel throughput. Fallback: hybrid dispatch (wave-front for dense lanes, parallel for sparse lanes) or EVEN/ODD with correction passes.
+
+4. **deck.gl CPU attribute generation blocks at 280K** -- JavaScript accessor loops take 30-80ms/frame on main thread. Must send pre-packed Float32Arrays via binary WebSocket and use deck.gl's `data.attributes` API to bypass accessors entirely. Implement viewport-based filtering (5K-30K visible agents, not 280K).
+
+5. **Fixed-point arithmetic penalty is 40-80%, not 20%** -- IDM formula chains 6+ fixed-point multiplications plus iterative sqrt. Defer to Phase 3 or later. Use float32 + @invariant fallback. Cross-GPU determinism is nice-to-have for POC, not a requirement.
 
 ## Implications for Roadmap
 
 Based on research, suggested phase structure:
 
-### Phase 1: Technical Spikes and Foundation
+### Phase 1: Foundation and Technical Spikes
+**Rationale:** The God Crate split unblocks everything. Three spikes (wave-front dispatch, multi-GPU, CCH) must produce GO/NO-GO decisions before expensive implementation. GPU compute must become the real physics driver immediately.
+**Delivers:** Decomposed crate structure (velos-gpu as library, velos-sim as binary), GPU physics as sole driver, spike results for wave-front/multi-GPU/CCH, velos-viz scaffold with mock data, v2 component types in velos-core.
+**Addresses:** God Crate decomposition, GPU cutover, 5-district network extension, velos-core upgrade (world, scheduler, time, fixed-point types).
+**Avoids:** Pitfall 1 (GPU not wired), Pitfall 2 (multi-GPU assumptions), Pitfall 3 (wave-front occupancy).
+**Critical gate:** All v1.0 tests pass with GPU physics as sole driver. Spike S1/S2/S3 produce binary GO/NO-GO.
 
-**Rationale:** Three high-risk integrations must be validated before any simulation code is written. If any spike fails, the architecture changes fundamentally (e.g., drop Tauri for winit+egui, drop fixed-point for f32+@invariant). Discovering these failures late would waste weeks of simulation development.
+### Phase 2: GPU Engine and Scale
+**Rationale:** With spikes validated, implement multi-GPU partitioning, wave-front dispatch, and scale to 280K agents. This is the critical path -- web platform work continues in parallel.
+**Delivers:** Multi-GPU wave-front dispatch (or fallback), 280K agent simulation at <15ms frame time, CCH routing (replacing A*), prediction ensemble, motorbike sublane on GPU.
+**Addresses:** Multi-GPU wave-front dispatch, fixed-point arithmetic (if spike positive), CCH dynamic pathfinding, prediction ensemble, pedestrian adaptive workgroups, motorbike sublane GPU port.
+**Avoids:** Pitfall 3 (occupancy -- use hybrid dispatch if needed), Pitfall 5 (fixed-point -- defer if penalty too high).
+**Uses:** wgpu 28, rayon 1.11, ndarray 0.17, arc-swap 1.8.
 
-**Delivers:** Proven wgpu+Metal compute pipeline, validated Tauri+wgpu rendering approach, fixed-point arithmetic library with CPU-GPU equivalence tests, wgpu buffer management pattern (double-buffer + poll + staging).
+### Phase 3: Web Platform and API
+**Rationale:** Can start early (Phase 1) with mock data and integrate live data once velos-sim produces frames. Not on the critical path but enables all external interaction.
+**Delivers:** gRPC/REST API, WebSocket streaming with Redis pub/sub spatial tiling, deck.gl 2D visualization with live agent data, FlatBuffers binary protocol, PMTiles basemap.
+**Addresses:** gRPC/REST API, WebSocket + Redis pub/sub, deck.gl visualization, PMTiles, data export.
+**Avoids:** Pitfall 4 (deck.gl bottleneck -- binary attributes from day one), Pitfall 7 (Docker GPU -- early validation test).
+**Uses:** tonic 0.14, axum 0.8, redis 1.0, flatbuffers 25.12, deck.gl 9.2, MapLibre 5.19.
 
-**Addresses:** GPU compute pipeline (P1), determinism (P1), visualization foundation (P1)
+### Phase 4: Calibration, Output, and Scenarios
+**Rationale:** Calibration requires all agent models running + traffic count data + data export. Scenario DSL requires calibrated baseline. These are the validation features that transform animation into engineering data.
+**Delivers:** GEH/RMSE calibration with Bayesian optimization, FCD/Parquet/CSV/GeoJSON export, HBEFA emissions, scenario DSL + batch runner + MOE comparison, Parquet checkpoint/restart.
+**Addresses:** GEH calibration, data export, HBEFA emissions, scenario DSL, checkpoint/restart.
+**Avoids:** Pitfall 6 (meso-micro discontinuities -- benchmark against full-micro before integrating).
+**Uses:** argmin 0.10, parquet/arrow 57, geojson 0.24, quick-xml 0.39.
 
-**Avoids:** Tauri+wgpu surface conflict (Pitfall 1), WGSL i64 overflow (Pitfall 2), wgpu polling deadlock (Pitfall 4), workgroup size misconfiguration
-
-### Phase 2: Road Network and Core Simulation
-
-**Rationale:** The simulation engine depends on having a real road network. OSM import + graph construction must precede agent behavior models because IDM/MOBIL operate on edges with known geometry. Building IDM in Rust first (as CPU oracle) before porting to WGSL catches numerical issues early.
-
-**Delivers:** HCMC road network from OSM, hecs ECS world with agent spawning, IDM car-following (Rust + WGSL), MOBIL lane-change, fixed-time signals, basic OD demand.
-
-**Addresses:** OSM import (P1), IDM (P1), MOBIL (P1), signals (P1), demand (P1), ECS world (P1)
-
-**Avoids:** IDM negative velocity (Pitfall 3), hecs iteration order instability
-
-### Phase 3: Motorbike Sublane Model and Routing
-
-**Rationale:** The sublane model is the core differentiator and depends on working neighbor queries (R-tree) and validated longitudinal behavior (IDM from Phase 2). CCH pathfinding is independent enough to develop in parallel but requires the road graph from Phase 2.
-
-**Delivers:** Continuous lateral positioning for motorbikes, gap filtering behavior, CCH with static weights, agent rerouting.
-
-**Addresses:** Motorbike sublane model (P1, primary differentiator), CCH pathfinding (P1)
-
-**Avoids:** Sublane timestep dependence (Pitfall 5), CCH wrong ordering (Pitfall 6)
-
-### Phase 4: Desktop Application and Visualization
-
-**Rationale:** The Tauri app shell wraps a working headless simulation. Building it last ensures the simulation is testable without the GUI. The wgpu render pipeline reuses the device/queue from Phase 1 spikes.
-
-**Delivers:** Tauri desktop app with simulation controls, 2D agent rendering on road network, frame rate display, speed controls.
-
-**Addresses:** Simulation playback controls (P1), visualization (P1)
-
-**Avoids:** Camera/dashboard input conflicts, missing frame rate indicator
-
-### Phase 5: Validation and Calibration
-
-**Rationale:** Calibration requires MOE output which requires a complete simulation loop. GEH validation against HCMC traffic counts proves the model is a simulator, not an animation.
-
-**Delivers:** MOE output (travel times, delay, queue lengths), GEH calibration against field data, pedestrian social force model, checkpoint/restart.
-
-**Addresses:** MOE output (P2), calibration (P2), pedestrian model (P2), checkpoint (P2)
-
-### Phase 6: Advanced Features and Scaling
-
-**Rationale:** Dynamic routing, meso-micro hybrid, and multi-GPU are scaling features that add value only after the core model is validated.
-
-**Delivers:** Dynamic CCH weight updates + prediction ensemble, meso-micro graduated buffer, data export (Parquet/FCD), multi-GPU partitioning.
-
-**Addresses:** Dynamic routing (P2), meso-micro hybrid (P2), data export (P3), multi-GPU (P3)
+### Phase 5: Deployment and Hardening
+**Rationale:** Docker containerization, monitoring, and load testing happen after all services exist and are individually validated.
+**Delivers:** Docker Compose 7-service stack, Prometheus/Grafana dashboards, 100-viewer WebSocket load test, bus dwell + bicycle agents, CesiumJS 3D (stretch).
+**Addresses:** Docker deployment, monitoring, multi-modal agents, CesiumJS (optional).
+**Avoids:** Pitfall 7 (Docker GPU -- use NVIDIA_DRIVER_CAPABILITIES=all, mount Vulkan ICD files).
+**Uses:** Docker Compose 3.9, Prometheus 2.48+, Grafana 10.2+, Redis 7 Alpine, Nginx Alpine.
 
 ### Phase Ordering Rationale
 
-- **Spikes first:** Tauri+wgpu and fixed-point are binary risks -- they either work or the architecture changes. Validate before investing in simulation code.
-- **Network before agents:** IDM/MOBIL operate on road edges. No road network = no agent behavior testing on real geometry.
-- **IDM before sublane:** Longitudinal behavior must be correct before adding lateral dynamics. Sublane model builds on top of working car-following.
-- **Headless before GUI:** The simulation must be testable via unit/integration tests without the Tauri shell. velos-app is the last crate to build.
-- **Validation before scaling:** Prove correctness at 1K agents before optimizing for 280K. Multi-GPU partitioning is wasted effort if the model is wrong.
+- **Phase 1 before all else:** The God Crate split is the single gating factor for all v2 work. Cannot add multi-GPU, cannot run headless, cannot serve API until velos-gpu is decomposed. Spikes prevent wasted effort on approaches that may not work.
+- **Phase 2 is the critical path:** GPU engine work (wave-front, multi-GPU, CCH) determines whether 280K agents are feasible. Everything downstream depends on a working, performant simulation engine.
+- **Phase 3 overlaps Phase 2:** The web platform can start with mock data in Phase 1 and integrate live data as Phase 2 delivers. This maximizes parallelism without creating dependencies.
+- **Phase 4 after Phase 2+3:** Calibration needs the full simulation running (Phase 2) and data export working (Phase 3). Scenario DSL needs calibrated baseline. This ordering prevents meaningless MOE comparisons against uncalibrated models.
+- **Phase 5 last:** Deployment hardening requires all services to exist. CesiumJS is presentation-only and deferred.
 
 ### Research Flags
 
 Phases likely needing deeper research during planning:
-- **Phase 1 (Spikes):** Tauri+wgpu integration is poorly documented. The FabianLars example is a proof of concept, not production code. May need to study raw NSView/CALayer management on macOS.
-- **Phase 3 (Sublane + CCH):** No direct WGSL precedent for continuous sublane model. CCH implementation requires studying RoutingKit or InertialFlowCutter source code. HCMC-specific motorbike parameters may need literature review.
+- **Phase 1:** Spike S1 (wave-front occupancy) and S2 (multi-GPU adapter) have uncertain outcomes. Research the specific GPU hardware available and wgpu version's multi-adapter capabilities before planning detailed tasks.
+- **Phase 2:** CCH implementation has no off-the-shelf Rust crate. Academic papers (Dibbelt 2014) and RoutingKit docs are the primary references. Plan for 2-3 weeks of pure algorithm implementation.
+- **Phase 4:** Meso-micro hybrid (if needed) is an active research problem with no standard solution. Burghout's KTH thesis is the best reference but boundary artifacts require iterative tuning.
 
 Phases with standard patterns (skip research-phase):
-- **Phase 2 (Network + IDM):** OSM import via osmpbf is well-documented. IDM is extensively documented in academic literature with known test scenarios. hecs ECS usage has clear examples.
-- **Phase 4 (App shell):** Tauri v2 has official templates and extensive documentation for IPC commands and React integration.
+- **Phase 3:** gRPC + REST + WebSocket with Redis pub/sub is well-documented. tonic + axum share tokio runtime. deck.gl performance patterns are documented in official guides.
+- **Phase 5:** Docker Compose deployment and Prometheus/Grafana monitoring are standard ops patterns with extensive documentation.
 
 ## Confidence Assessment
 
 | Area | Confidence | Notes |
 |------|------------|-------|
-| Stack | HIGH | Core technologies (wgpu, hecs, rayon, tokio) verified via crates.io with specific versions. Nightly Rust risk mitigated by pinned toolchain. |
-| Features | MEDIUM-HIGH | Competitor analysis well-sourced. Motorbike gap confirmed by academic literature. Feature prioritization is clear. |
-| Architecture | MEDIUM | ECS-to-GPU pipeline and wave-front dispatch are sound in theory but lack direct WGSL precedent. Tauri+wgpu integration confidence is LOW. |
-| Pitfalls | MEDIUM-HIGH | Pitfalls verified against official issue trackers and academic papers. Mitigation strategies are concrete. |
+| Stack | HIGH | All crate versions verified on crates.io. Compatibility matrix validated. No speculative dependencies. |
+| Features | HIGH | Domain well-established (SUMO/VISSIM/Aimsun as references). Feature landscape grounded in competitor analysis and v1.0 validation. |
+| Architecture | HIGH | Based on existing v1.0 codebase analysis + thorough v2 architecture documents. Migration path is concrete, not abstract. |
+| Pitfalls | MEDIUM-HIGH | GPU-specific pitfalls (multi-adapter, wave-front occupancy, fixed-point) have uncertain outcomes requiring spikes. Recovery strategies are documented for all pitfalls. |
 
-**Overall confidence:** MEDIUM-HIGH
+**Overall confidence:** HIGH
 
 ### Gaps to Address
 
-- **Tauri+wgpu dual-surface on macOS:** No production example exists. Phase 1 spike is the validation point. Fallback: two-window or winit+egui.
-- **Wave-front dispatch occupancy:** With avg 5.6 agents/lane and workgroup_size(256), 98% of threads are idle. At 280K scale, may need workgroup_size(1) or workgroup_size(32) with subgroup ops. Profile during Phase 2.
-- **Fixed-point Q16.16 overflow boundary:** The exact safe range for multiplication intermediates needs empirical testing with realistic HCMC coordinate values (lat/lon range, speed range). Phase 1 spike deliverable.
-- **HCMC motorbike calibration data:** Default parameters (v0=40km/h, s0=1.0m, T=0.8s) are from literature but need field validation. No automated calibration until Phase 5.
-- **Apple Silicon Metal compute limits:** Max 256 workgroup invocations, subgroup size 32. Needs profiling with actual simulation workloads to determine optimal dispatch strategy.
+- **wgpu multi-adapter compute:** No production evidence of wgpu managing 2+ GPUs for compute in a single process. Spike S2 is the only way to validate. If NO-GO, scope down to single-GPU 200K agents (architecture already accounts for this).
+- **CCH implementation complexity:** No Rust CCH crate exists. Academic algorithm is well-documented but custom implementation is estimated at 2-3 weeks. RoutingKit (C++) can serve as reference but is not directly portable.
+- **HCMC traffic count data availability:** GEH calibration requires ~50 loop counter locations from HCMC DOT. Data access has not been confirmed. Fallback: calibrate against GPS probe data (Grab/Bee) or defer calibration to when data becomes available.
+- **deck.gl binary attribute path at scale:** The pre-packed Float32Array approach bypasses accessor functions but has limited community examples at 280K points with 10Hz updates. Needs early prototyping in Phase 1 (velos-viz scaffold).
+- **Fixed-point compound cost:** The 40-80% penalty estimate is derived from formula analysis, not empirical measurement. The actual cost depends on GPU architecture (Metal vs Vulkan) and compiler optimizations. Only measurable via Spike S1 variant or dedicated benchmark.
 
 ## Sources
 
 ### Primary (HIGH confidence)
-- wgpu 28.0.0 -- crates.io, docs.rs (API, compute pipelines, buffer management)
-- WGSL W3C Specification -- barrier uniformity, type system, compute semantics
-- hecs 0.11.0 -- crates.io (ECS API, archetype storage)
-- Tauri v2.10.3 -- official release notes, IPC documentation
-- Apple Metal compute documentation -- workgroup limits, unified memory
-- IDM academic literature (SIAM 2021) -- numerical pathologies, mitigation strategies
-- CCH paper (Dibbelt et al., 2014) -- ordering requirements, customization algorithm
-- FHWA microsimulation guidelines -- GEH calibration standards
+- VELOS v1.0 codebase (6 crates, 7,802 LOC) -- direct analysis
+- VELOS v2 architecture documents (docs/architect/00-07) -- authoritative project spec
+- crates.io version verification for all Rust dependencies
+- npm package verification for all frontend dependencies
+- [LPSim multi-GPU traffic simulation (UC Berkeley, 2024)](https://arxiv.org/html/2406.08496) -- peer-reviewed
+- [CCH Survey (Feb 2025)](https://arxiv.org/abs/2502.10519) -- comprehensive academic survey
+- [FHWA Traffic Analysis Toolbox](https://ops.fhwa.dot.gov/trafficanalysistools/tat_vol3/sect6.htm) -- official US DOT
+- [deck.gl performance best practices](https://deck.gl/docs/developer-guide/performance) -- official docs
 
-### Secondary (MEDIUM confidence)
-- FabianLars/tauri-v2-wgpu -- proof of concept for Tauri+wgpu integration
-- GPU-accelerated traffic simulation (2024 arxiv) -- 88x speedup benchmark
-- SUMO sublane timestep bug (eclipse-sumo #8154) -- lateral dynamics dependence
-- wgpu compute tutorials (Till Code, Hugo Daniel) -- buffer patterns, staging belt
+### Secondary (MEDIUM-HIGH confidence)
+- [wgpu multi-adapter limitations](https://wgpu.rs/) -- official docs but multi-adapter is under-documented
+- [RoutingKit CCH documentation](https://github.com/RoutingKit/RoutingKit/blob/master/doc/CustomizableContractionHierarchy.md) -- reference implementation docs
+- [Hybrid meso-micro simulation (Burghout, KTH)](https://www.diva-portal.org/smash/get/diva2:14700/FULLTEXT01.pdf) -- academic
+- [Redis pub/sub WebSocket scaling (Ably)](https://ably.com/blog/scaling-pub-sub-with-websockets-and-redis) -- industry blog
+- [NVIDIA Container Toolkit docs](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/docker-specialized.html) -- official
 
-### Tertiary (LOW confidence)
-- Tauri+wgpu overlay discussion (#11944) -- community discussion, no resolution
-- VISSIM motorcycle simulation for HCMC -- confirms VISSIM struggles but limited methodology detail
+### Tertiary (MEDIUM confidence)
+- Fixed-point performance penalty (40-80%) -- derived from formula analysis, not empirical measurement
+- deck.gl 280K point binary streaming -- limited community examples at this scale
+- wgpu in Docker discrete GPU issues (gfx-rs/wgpu#2123) -- GitHub issue, may be resolved in wgpu 28
 
 ---
-*Research completed: 2026-03-06*
+*Research completed: 2026-03-07*
 *Ready for roadmap: yes*

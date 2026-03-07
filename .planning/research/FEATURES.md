@@ -1,222 +1,276 @@
 # Feature Research
 
-**Domain:** GPU-accelerated traffic microsimulation (motorbike-native, Southeast Asian mixed traffic)
-**Researched:** 2026-03-06
-**Confidence:** MEDIUM-HIGH (competitor features well-documented; SE Asian motorbike gap is confirmed by literature)
+**Domain:** GPU-accelerated traffic microsimulation digital twin platform (v1.1 scale-up)
+**Researched:** 2026-03-07
+**Confidence:** HIGH (architecture docs are thorough; domain is well-established with SUMO/VISSIM/Aimsun as references; v1.0 POC validated core simulation pipeline)
+
+## Context
+
+v1.0 shipped a desktop POC: 1.5K agents, District 1, egui dashboard, A* routing, CPU-side physics (GPU pipeline tested but not wired). v1.1 is the full v2 architecture: 280K agents across 5 HCMC districts with multi-GPU compute, web visualization, API server, calibration, and deployment infrastructure. This research focuses exclusively on the NEW features needed for v1.1.
 
 ## Feature Landscape
 
 ### Table Stakes (Users Expect These)
 
-Features that any traffic microsimulation tool must have. Missing these means the product is not a credible simulator.
+Features that any credible traffic microsimulation digital twin platform must have. These transform the v1.0 desktop demo into a usable platform. Missing any of these means v1.1 is not a viable product.
 
 | Feature | Why Expected | Complexity | Notes |
 |---------|--------------|------------|-------|
-| Car-following model (IDM) | Core of microsimulation -- every vehicle needs longitudinal behavior | MEDIUM | VELOS uses IDM only, which is correct for POC. SUMO/VISSIM both offer IDM. W99 intentionally excluded (no PTV calibration data for HCMC). |
-| Lane-changing model (MOBIL) | Vehicles must change lanes realistically | MEDIUM | Standard MOBIL with HCMC-tuned politeness (0.3, aggressive). SUMO uses LC2013/SL2015, VISSIM uses proprietary model. |
-| Traffic signal control (fixed-time) | Intersections must have signals | LOW | HCMC reality: most intersections are fixed-time or unsignalized. Actuated signals deferred to later. |
-| Network import (OSM) | Users expect to load real road networks | MEDIUM | All competitors support OSM. SUMO has netconvert, Aimsun has importers. VELOS needs HCMC-specific edge cases (alleys, one-ways). |
-| Origin-Destination demand | Must define where trips start/end | MEDIUM | OD matrices with time-of-day profiles (AM peak, PM peak, off-peak, weekend). Standard in all competitors. |
-| Dynamic routing / pathfinding | Agents must find routes and respond to congestion | HIGH | VELOS uses CCH with dynamic weight updates. SUMO uses Dijkstra/A*/CH. Aimsun has DTA. This is table stakes but VELOS's CCH approach is technically superior. |
-| Simulation playback controls | Start, stop, pause, speed up, step-through | LOW | Every simulator has this. Tauri IPC handles it for VELOS desktop app. |
-| Measures of Effectiveness (MOE) output | Travel time, delay, queue length, throughput, LOS | MEDIUM | FHWA guidelines define standard MOEs. Users compare simulation output against field data. Must output at minimum: link travel times, intersection delay, queue lengths. |
-| Calibration against field data | GEH statistic, RMSE against traffic counts | MEDIUM | GEH < 5 for 85%+ links is the industry standard (FHWA). Without calibration, the model is an animation, not a simulation. |
-| Deterministic simulation | Same inputs must produce same outputs | MEDIUM | Required for reproducibility and debugging. VELOS achieves this via fixed-point arithmetic (Q16.16/Q12.20). SUMO is deterministic by default. |
-| Multi-modal agents | Cars, motorcycles, buses, pedestrians, bicycles | HIGH | All major competitors support multiple vehicle types. VELOS targets 4 vehicle types + pedestrians. |
-| Pedestrian simulation | Social force or similar model | MEDIUM | SUMO has pedestrian model, VISSIM has PTV Viswalk, Aimsun has pedestrian module. VELOS uses social force with adaptive GPU workgroups. |
-| Data export (FCD, statistics) | Floating Car Data, link/turn statistics, CSV/Parquet | MEDIUM | Standard output format. SUMO exports FCD XML, Aimsun exports CSV. VELOS plans Parquet (columnar, efficient). Deferred to post-MVP but must exist eventually. |
-| Visualization / animation | 2D view of vehicles moving on network | MEDIUM | Every simulator has this. VELOS uses native wgpu rendering (desktop) with future deck.gl (web). |
+| **gRPC/REST API for simulation control** | Every modern sim platform exposes programmatic control (SUMO TraCI, VISSIM COM, Aimsun Python SDK). Without an API, the sim is a demo, not a platform. External tools, notebooks, and dashboards all need API access. | MEDIUM | tonic (gRPC) + axum (REST/WebSocket). Protobuf contracts designed in `05-visualization-api.md`. ~20 RPC methods. Depends on: v1.0 simulation engine refactored for server mode. |
+| **WebSocket real-time streaming** | Viewers expect live agent positions at 10Hz. SUMO provides TraCI streaming; VISSIM has COM. Web-based streaming via WebSocket is the modern equivalent for browser clients. | MEDIUM | FlatBuffers binary protocol (8 bytes/agent). Spatial tiling (500m cells) for viewport-based subscription. 280K agents = ~32KB/frame for 4 tiles. Depends on: API server, Redis pub/sub. |
+| **Parquet checkpoint/restart** | 24-hour simulations crash. Every production sim has save/load (SUMO state save, VISSIM snapshot). Without checkpoint, no batch runs, no crash recovery. | MEDIUM | ECS snapshot to Parquet via arrow-rs. 280K agents = ~15MB compressed (Zstd L3). ~200ms save, ~500ms restore. Rolling window of 10 checkpoints. Depends on: ECS state serialization, Parquet writer. |
+| **GEH/RMSE calibration** | Industry standard since FHWA Traffic Analysis Toolbox Vol III. GEH < 5 for 85%+ links is the accepted threshold (confirmed by Florida DOT). Without calibration, model output is an animation, not engineering data. | MEDIUM | GEH statistic implementation + Bayesian optimization via argmin crate. Tunes: OD scaling factors, IDM params per road class, signal timing offsets. Depends on: traffic count data (HCMC DOT, ~50 locations), data export, full agent models running. |
+| **Data export (FCD, Parquet, CSV, GeoJSON)** | Researchers analyze results in Python/R/QGIS. Every sim exports data. SUMO exports FCD XML, VISSIM exports CSV. Parquet for big data analytics workflows. | LOW | arrow-rs for Parquet, serde for CSV/GeoJSON, quick-xml for SUMO FCD compatibility. Straightforward once simulation state is accessible. Depends on: simulation producing per-step output. |
+| **5-district HCMC road network** | The POC scope. Districts 1, 3, 5, 10, Binh Thanh = ~25K edges, ~15K junctions, ~50km road network. Must be fully connected and clean. | MEDIUM | Extends v1.0 District 1 OSM import. Adds: network cleaning (merge short edges <5m, remove disconnected components), lane count inference by road class, HCMC-specific rules (one-way streets, U-turn points, motorbike-only lanes). Depends on: v1.0 OSM import pipeline. |
+| **Time-of-day demand profiles (extended)** | v1.0 has basic ToD. v1.1 needs HCMC-specific weekday/weekend/holiday profiles across 5 districts with proper AM/PM peak shapes. 280K peak agents. | LOW | Extends v1.0 OD/ToD system. Add DemandEvent support for spikes. Gravity model fallback if GPS probe data unavailable. Depends on: v1.0 demand generation. |
+| **Bus dwell time modeling** | Buses are 4% of HCMC agents (10K) but disproportionately affect traffic flow by blocking lanes during dwell (HCMC has few dedicated bus bays). Every multi-modal sim handles bus stops. | LOW | Empirical dwell time = 5s fixed + 0.5s/boarding + 0.67s/alighting, capped at 60s. HCMC GTFS available for 130 routes. Depends on: GTFS import, agent type system from v1.0. |
+| **Bicycle agents** | 7% of POC agents (20K). Bicycles share road space. Missing bicycle agents creates unrealistic density distribution. SUMO/VISSIM both model bicycles. | LOW | Sublane model (rightmost, no filtering), IDM with v0=15km/h. Similar to motorbike but simpler behavior. Depends on: v1.0 agent type system, sublane infrastructure. |
+| **Docker Compose deployment** | Reproducibility is non-negotiable for scientific software. "Works on my machine" is unacceptable. Docker Compose is the minimal viable deployment strategy. | LOW | 7 services: sim (GPU), api, viz, redis, tiles (nginx), prometheus, grafana. docker-compose.yml already specified in `06-infrastructure.md`. Depends on: all service binaries buildable. |
+| **Prometheus/Grafana monitoring** | At 280K agents on multi-GPU, you need operational visibility: frame time, GPU utilization, VRAM, gridlock events, boundary transfers. Blind operation at scale is reckless. | LOW | Standard Prometheus exposition + pre-built Grafana dashboards. Key metrics: frame_time_ms (histogram), agent_count (gauge), gpu_utilization, gridlock_events, reroute_count. Depends on: instrumented simulation loop. |
+| **PMTiles static map tiles** | Web visualization needs base maps. PMTiles + Nginx = zero-ops tile serving. Eliminates Martin/PostGIS/Nominatim stack (6+ services down to 0 additional). | LOW | One-time tile generation: OSM PBF -> tilemaker -> mbtiles -> pmtiles. Nginx serves static files. MapLibre GL JS consumes via pmtiles:// protocol. Depends on: nothing (independent pipeline). |
 
 ### Differentiators (Competitive Advantage)
 
-Features that set VELOS apart from SUMO, VISSIM, Aimsun, and MATSim.
+Features that set VELOS v1.1 apart from all existing traffic simulation platforms. These are where the project competes.
 
 | Feature | Value Proposition | Complexity | Notes |
 |---------|-------------------|------------|-------|
-| **Continuous sublane motorbike model** | SUMO's sublane model discretizes lanes into sublanes (e.g., 0.8m resolution). VISSIM requires External Driver Model hacks for motorcycle filtering. VELOS uses truly continuous lateral positioning (FixedQ8_8) -- motorbikes occupy any lateral position, not discrete sublane slots. This is the single most important differentiator. | HIGH | No competitor handles motorbike swarm behavior (gap filtering, red-light clustering) natively. SUMO's SL2015 model is the closest but still grid-based. |
-| **GPU-accelerated compute** | SUMO, VISSIM, Aimsun are all CPU-based. VELOS runs agent updates on GPU via wgpu/WGSL compute shaders. Recent research (2024) shows GPU simulators achieving 88x speedup over CPU equivalents. | HIGH | Enables real-time simulation of 280K agents. CPU-based SUMO struggles above 50K agents in real-time. This unlocks interactive "what-if" analysis at city scale. |
-| **Motorbike-pedestrian interaction** | HCMC pedestrians navigate through slow-moving motorbike streams. Jaywalking probability 0.3 (vs near-zero in Western models). No competitor models this interaction natively. | MEDIUM | Builds on social force model + sublane model. Critical for HCMC realism where sidewalk/road boundary is fluid. |
-| **HCMC-calibrated defaults** | Pre-tuned IDM parameters for HCMC traffic (motorbike v0=40km/h, s0=1.0m, T=0.8s). Competitors ship with European/US defaults that produce garbage for SE Asian cities. | LOW | Low implementation cost, high user value. Eliminates the #1 pain point researchers report when using SUMO/VISSIM for SE Asian traffic. |
-| **Meso-micro hybrid with graduated buffer** | Aimsun has meso-micro hybrid but transition causes artificial waves. VELOS's 100m buffer zone with velocity interpolation and IDM parameter relaxation eliminates phantom congestion at zone boundaries. | HIGH | Enables large networks (meso for far zones, micro for study area) without boundary artifacts. |
-| **Fixed-point cross-GPU determinism** | Q16.16 positions, Q12.20 speeds ensure bitwise-identical results across different GPUs. No competitor offers cross-hardware deterministic simulation. | MEDIUM | Unique selling point for reproducible research. Academic users care deeply about this. |
-| **In-process prediction ensemble** | BPR + ETS + historical prediction runs in-process (Rust-native). No Python bridge, no Arrow IPC overhead. SUMO's prediction requires external tools. VISSIM has no built-in prediction. | MEDIUM | Enables real-time rerouting response. Prediction updates in <3ms vs 100ms+ for cross-process approaches. |
-| **Real-time interactive what-if** | GPU speed enables changing signal timing, adding road closures, modifying demand in real-time and seeing results immediately. CPU simulators require batch runs. | MEDIUM | Transforms workflow from "run overnight, analyze tomorrow" to "try it now, see it now." |
+| **Multi-GPU wave-front dispatch** | No open-source traffic sim does multi-GPU microscopic simulation. LPSim (UC Berkeley, 2024) is the only published multi-GPU traffic sim and it's mesoscopic only. VELOS doing per-lane Gauss-Seidel wave-front on multiple GPUs with 280K micro agents is genuinely novel. | HIGH | METIS graph partitioning (k-way, k=num_gpus), boundary agent protocol (outbox/inbox staging buffers, ~64KB/step transfer), per-lane wave-front dispatch (50K workgroups). Eliminates v1.0 EVEN/ODD dispatch which has no convergence proof. Depends on: v1.0 GPU pipeline, network graph partitioning. |
+| **Fixed-point arithmetic for cross-GPU determinism** | SUMO is deterministic (CPU, single-thread). GPU sims are typically non-deterministic due to IEEE 754 variance across GPU vendors. Bitwise-identical results across AMD/NVIDIA/Intel is a research-grade feature no competitor offers. | HIGH | Q16.16 position (0.015mm resolution), Q12.20 speed, Q8.8 lateral. Manual 64-bit emulation in WGSL (no native i64). ~20% GPU perf cost. Fallback: float32 with @invariant if perf unacceptable. Depends on: wave-front dispatch (sequential within-lane makes FP feasible). |
+| **CCH dynamic pathfinding (3ms weight update)** | Standard CH requires 30s full rebuild on weight change. CCH separates topology from weights: 30s initial ordering (once), then 3ms customization for 25K edges whenever prediction updates. 0.02ms per query (25x faster than A*). No open-source sim has CCH -- SUMO uses Dijkstra/A*/CH, all require full rebuild for dynamic weights. | HIGH | Custom CCH implementation in Rust. No production-ready CCH crate exists. Must implement: node ordering, shortcut topology construction, bottom-up weight customization, bidirectional Dijkstra on CCH. 500 queries/step in 0.7ms with rayon (16 cores). Depends on: 5-district network graph, prediction overlay for weight updates. |
+| **In-process prediction ensemble** | Competitors either have no prediction (SUMO) or require external Python/ML sidecar (latency, ops complexity). VELOS runs BPR + ETS + historical prediction in-process with ArcSwap for zero-copy, lock-free overlay swap. Predictions are never stale. | MEDIUM | Three models: BPR physics extrapolation (w=0.40), exponential smoothing correction (w=0.35), historical pattern match (w=0.25). Runs every 60 sim-seconds on tokio::spawn. 25K edges x 3 models = ~0.1ms. Depends on: simulation state snapshots, historical calibration data. |
+| **Motorbike sublane at GPU scale (200K)** | v1.0 proved the continuous lateral model at 1.5K agents. v1.1 scales to 200K motorbikes on GPU. No other sim handles 200K motorbikes with continuous lateral positioning and swarm behavior. This remains the core differentiator. | MEDIUM | Port v1.0 CPU sublane model to GPU compute shaders with fixed-point lateral position (FixedQ8_8). Gap-based filtering, swarm clustering at signals. Depends on: v1.0 sublane model, GPU wave-front dispatch. |
+| **Pedestrian adaptive GPU workgroups** | Standard GPU spatial hash wastes workgroups on empty cells. Prefix-sum compaction dispatches only non-empty cells. 3-8x speedup for non-uniform pedestrian density (crosswalk rush hour vs. empty sidewalks). Novel GPU optimization. | MEDIUM | 4-phase GPU pipeline: count per cell (atomic), prefix-sum scan, scatter into compacted array, social force compute. Variable cell sizes by density zone (2m crosswalk, 5m sidewalk, 10m park). Depends on: v1.0 pedestrian model, GPU compute pipeline. |
+| **deck.gl 2D + CesiumJS 3D web visualization** | All competitors are desktop-first (SUMO-GUI, VISSIM desktop, Aimsun Next). Web-based visualization with deck.gl handles 280K points at 60FPS in any browser. Multi-viewer without client install. CesiumJS for 3D stakeholder demos. | MEDIUM | React + TypeScript dashboard. deck.gl layers: ScatterplotLayer (vehicles), HeatmapLayer (density), PathLayer (bus routes), IconLayer (signal states). CesiumJS optional (OSM building extrusions). Depends on: WebSocket streaming, API server, PMTiles, FlatBuffers protocol. |
+| **Meso-micro hybrid with graduated buffer zones** | Aimsun has meso-micro hybrid but boundary discontinuities cause phantom congestion (known issue in literature). VELOS's 100m buffer zone with velocity-matching insertion and linear IDM parameter interpolation (T: 2x -> 1x normal, s0: 1.5x -> 1x normal) eliminates boundary artifacts. Active research area with no solved standard approach. | HIGH | Queue-based meso model (O(1)/edge), 100m velocity interpolation buffer, safe insertion protocol (hold vehicle in meso queue if micro is full), IDM parameter relaxation. Depends on: v1.0 micro models working at scale, network zone classification. |
+| **Scenario DSL + batch runner + MOE comparison** | SUMO has NETEDIT but no declarative scenario DSL. VISSIM requires COM scripting. A TOML/YAML-based scenario definition with automated parallel batch execution and MOE comparison tables is a significant developer experience improvement. | MEDIUM | Scenario DSL defines: network mutations (block edge, change signal), demand variations (multipliers, events), parameter overrides. Batch runner: parallel execution with different seeds. MOE comparison: throughput, mean delay, travel time index, queue length, LOS distribution. Depends on: checkpoint/restart, calibrated baseline, data export. |
+| **HBEFA emissions modeling** | HBEFA 5.1 (Oct 2025) is the European standard for road transport emission factors. SUMO integrates via external tool chain. Having HBEFA natively in Rust means per-agent per-step emissions output (CO2, NOx, PM) with zero pipeline overhead. Valuable for policy evaluation (e.g., motorbike restriction zones). | LOW | Lookup table: (vehicle_type, speed, road_gradient, traffic_situation) -> g/km. HBEFA factors are published data. Includes motorcycle emission factors (critical for HCMC). Depends on: agent speed/type data per step, edge gradient data. |
 
 ### Anti-Features (Commonly Requested, Often Problematic)
 
-Features that seem valuable but create problems for VELOS specifically.
-
 | Feature | Why Requested | Why Problematic | Alternative |
 |---------|---------------|-----------------|-------------|
-| **Wiedemann 99 car-following** | "Industry standard" in VISSIM, researchers ask for it | W99 has 10 calibration parameters (CC0-CC9) requiring PTV-calibrated datasets that don't exist for HCMC. Including it creates false expectations -- users select it, get uncalibrated garbage, blame VELOS. | IDM with 5 physically interpretable parameters, calibratable from basic traffic counts via Bayesian optimization. |
-| **SUMO TraCI compatibility** | "I want to use my existing SUMO scripts" | Maintaining API compatibility with a moving target (TraCI evolves with SUMO releases) is a massive ongoing burden. TraCI's TCP socket architecture conflicts with VELOS's GPU-first design. | Native gRPC + REST API with clear contracts. Provide a thin Python client library. Migration guide for common TraCI patterns. |
-| **Full activity-based demand (MATSim-style)** | "I want agents with daily activity chains" | MATSim's co-evolutionary approach requires hundreds of iterations to converge. This conflicts with VELOS's real-time interactive model. Activity-based demand is a different product category (strategic planning vs operational microsimulation). | OD matrices with time-of-day profiles for microsimulation. If strategic modeling needed, use MATSim for demand generation and feed OD matrices into VELOS. |
-| **3D visualization (CesiumJS/Unreal)** | "I want photorealistic 3D rendering" | 3D rendering consumes GPU resources that should be used for simulation compute. Photorealistic rendering is a separate engineering discipline. No CityGML dataset exists for HCMC anyway. | 2D top-down wgpu rendering for desktop. deck.gl for web dashboard (future). Focus GPU budget on simulation, not rendering. |
-| **Connected/Autonomous Vehicle (CAV) models** | "Every new simulator should support CAVs" | HCMC has negligible AV presence. Building CAV models diverts resources from the motorbike model, which is the actual differentiator. | Defer to v3+. When HCMC has CAVs, add them. Don't build features for a market that doesn't exist in the target city. |
-| **Multi-node distributed simulation** | "What about million-agent scenarios?" | 280K agents fit on a single node with 2-4 GPUs. Distributed simulation introduces clock synchronization, network partitioning, and ghost zone complexity that would delay the POC by months. | Single-node multi-GPU first. Prove the simulation model works before distributing it. |
-| **Plugin/extension system** | "Let users write custom models" | Plugin APIs create backward compatibility obligations. Every internal refactor must preserve plugin contracts. Premature API stabilization prevents necessary architectural changes during POC. | Provide source code (it's a research tool). Users fork and modify. Stabilize APIs after v2 architecture settles. |
-| **Real-time sensor data ingestion** | "Feed live GPS/loop detector data" | Real-time ingestion requires streaming infrastructure (Kafka, etc.), data quality handling, and clock synchronization -- all orthogonal to the core simulation engine. | Batch import of historical sensor data for calibration. Real-time digital twin is a v3+ goal after the simulation model is validated. |
+| **Wiedemann 99 car-following** | VISSIM users expect it. 10-parameter model claims higher fidelity. | W99 requires PTV-calibrated datasets unavailable for HCMC. Uncalibrated W99 produces worse results than calibrated IDM. Including it creates false expectations. | IDM with 5 physically interpretable parameters. Bayesian optimization tunes within HCMC-specific ranges. |
+| **SUMO TraCI compatibility** | Reuse existing SUMO scripts. Large ecosystem. | TraCI is synchronous, single-threaded, fundamentally incompatible with GPU-parallel execution. API surface is ~200 commands. Maintaining compatibility with a moving target is massive ongoing burden. | Native gRPC API. Provide thin Python client (`velos-py`) mirroring TraCI patterns for migration. |
+| **Multi-node distributed simulation** | "Scale to 2M agents across a cluster." | 280K agents fit on single-node 2-4 GPUs. Multi-node adds: network latency (100x PCIe), distributed state sync, clock sync, ghost zone complexity. All for a target that doesn't need it. | Single-node multi-GPU. PCIe agent transfer at 64KB/step is negligible. Multi-node deferred to v3 for 2M+ agents. |
+| **Real-time sensor data fusion** | Digital twin "should" sync with live traffic. | Requires: data partnerships (HCMC DOT), streaming pipeline (Kafka), data quality filters, clock synchronization. Massive scope creep for marginal POC value. | Offline calibration with historical counts. Replay recorded sensor data. Add live fusion in v3 after model validated. |
+| **ML/DL prediction (PyTorch/TensorFlow)** | Deep learning predicts traffic better. | Python sidecar = Arrow IPC latency, ops complexity, version conflicts. ML models need training data that doesn't exist for HCMC yet. | Rust-native BPR+ETS+historical ensemble. If ML needed later, add as gRPC prediction service (not shared-memory IPC). |
+| **CityGML 3D buildings** | Photorealistic 3D city visualization. | No CityGML dataset exists for HCMC. Creating one is months of work. | OSM building footprint extrusions in CesiumJS. Heights from `building:levels` tag. 80% visual impact at 1% effort. |
+| **Autonomous vehicle models** | "Every new sim should support AVs." | Negligible AV presence in HCMC. Adds agent interaction complexity with zero benefit for HCMC POC. | Defer to v3. Add when HCMC has measurable AV penetration. |
+| **Full passenger flow model** | Multi-commodity passenger OD, overcrowding, transfers. | Massive modeling complexity (demand, fare, capacity, transfer network). Bus dwell time model captures 80% of traffic impact at 5% effort. | Simplified bus dwell time (fixed + per-passenger). Defer full passenger flow to transit optimization phase. |
+| **Plugin/extension system** | "Let users write custom models." | Plugin APIs create backward compatibility obligations. Premature API stabilization prevents necessary architectural changes. | Provide source code. Users fork and modify. Stabilize APIs after v2 architecture settles. |
 
 ## Feature Dependencies
 
 ```
-Road Network (OSM Import)
-    +-- Spatial Index (R-tree)
-    |       +-- Neighbor Queries (car-following, lane-change, motorbike filtering)
-    +-- Pathfinding (CCH)
-    |       +-- Dynamic Routing
-    |               +-- Prediction Ensemble (BPR+ETS)
-    +-- Signal Control (Fixed-time)
+[Multi-GPU Wave-Front Dispatch]
+    |-- requires --> [v1.0 GPU Compute Pipeline]
+    |-- requires --> [Network Graph Partitioning (METIS)]
+    |-- requires --> [Fixed-Point Arithmetic]
+    |-- enables  --> [280K Agent Scale]
 
-ECS World (hecs)
-    +-- Agent Spawn (OD + ToD)
-    +-- GPU Buffer Mapping
-            +-- Car-Following (IDM) [GPU compute]
-            +-- Lane-Change (MOBIL) [GPU compute]
-            +-- Motorbike Sublane Model [GPU compute]
-            +-- Pedestrian Social Force [GPU compute]
+[Fixed-Point Arithmetic]
+    |-- requires --> [Wave-Front Dispatch] (sequential in-lane makes FP feasible)
+    |-- enables  --> [Cross-GPU Determinism]
+    |-- enables  --> [Deterministic Replay for Scenario Comparison]
 
-Motorbike Sublane Model
-    +-- requires: Continuous Lateral Position (Q8.8)
-    +-- requires: Neighbor Queries (lateral gap detection)
-    +-- enhances: Motorbike-Pedestrian Interaction
+[CCH Dynamic Pathfinding]
+    |-- requires --> [5-District Network Graph]
+    |-- requires --> [Prediction Ensemble] (provides dynamic edge weights)
+    |-- replaces --> [v1.0 A* on petgraph]
+    |-- enables  --> [Dynamic Agent Rerouting (500/step)]
 
-Calibration (GEH/RMSE)
-    +-- requires: MOE Output (travel times, counts)
-    +-- requires: Field Data Import
-    +-- requires: Bayesian Optimization (argmin)
+[Prediction Ensemble (BPR+ETS+Historical)]
+    |-- requires --> [Simulation State Snapshots]
+    |-- requires --> [Historical Calibration Data]
+    |-- enhances --> [CCH Routing] (weight updates every 60 sim-seconds)
 
-Meso-Micro Hybrid
-    +-- requires: Micro model (IDM+MOBIL) working first
-    +-- requires: Meso queue model
-    +-- requires: Buffer zone velocity interpolation
+[Meso-Micro Hybrid]
+    |-- requires --> [v1.0 Micro Models (IDM/MOBIL/Sublane) at scale]
+    |-- requires --> [Network Zone Classification]
+    |-- requires --> [CCH Routing] (meso zones need fast pathfinding)
+    |-- conflicts --> [Full-micro-only at 280K] (may not be needed if GPUs handle full micro)
 
-Visualization
-    +-- requires: Agent position data (from ECS)
-    +-- independent of: Simulation correctness (can render wrong results)
+[gRPC/REST API]
+    |-- requires --> [v1.0 Simulation Engine (refactored for server mode)]
+    |-- enables  --> [WebSocket Streaming]
+    |-- enables  --> [Scenario DSL/Batch Runner]
+    |-- enables  --> [deck.gl Visualization]
+    |-- enables  --> [External Tool Integration]
+
+[WebSocket Streaming + Redis Pub/Sub]
+    |-- requires --> [gRPC/REST API]
+    |-- requires --> [Redis service]
+    |-- enables  --> [deck.gl Real-Time Visualization]
+    |-- enables  --> [Multi-Viewer Scaling (100+ clients)]
+
+[deck.gl Web Visualization]
+    |-- requires --> [WebSocket Streaming]
+    |-- requires --> [PMTiles Map Tiles]
+    |-- requires --> [FlatBuffers Binary Protocol]
+
+[CesiumJS 3D Visualization]
+    |-- requires --> [deck.gl infrastructure] (shares WebSocket, API, tiles)
+    |-- optional --> [Terrain tiles from SRTM DEM]
+
+[GEH/RMSE Calibration]
+    |-- requires --> [5-District Network + All Agent Models Running]
+    |-- requires --> [Traffic Count Data (HCMC DOT, ~50 locations)]
+    |-- requires --> [Data Export (simulated counts for comparison)]
+    |-- enables  --> [Validated Model -- output is engineering data, not animation]
+
+[Scenario DSL + Batch Runner]
+    |-- requires --> [Checkpoint/Restart (for deterministic replay)]
+    |-- requires --> [Data Export (for MOE computation)]
+    |-- requires --> [GEH Calibration (baseline must be validated first)]
+    |-- enables  --> [MOE Comparison Tables]
+
+[Parquet Checkpoint/Restart]
+    |-- requires --> [ECS State Serialization (arrow-rs)]
+    |-- enables  --> [Long-Running Simulations (24h+)]
+    |-- enables  --> [Scenario Batch Runs]
+    |-- enables  --> [Crash Recovery]
+
+[Docker Compose Deployment]
+    |-- requires --> [All Service Binaries (sim, api, viz)]
+    |-- enables  --> [Reproducible Deployment]
+    |-- enables  --> [Monitoring Stack (Prometheus/Grafana)]
+
+[Pedestrian Adaptive Workgroups]
+    |-- requires --> [v1.0 Social Force Model]
+    |-- requires --> [GPU Prefix-Sum Compaction Shader]
+    |-- enhances --> [Pedestrian Performance at 20K agents]
+
+[Bus Dwell + Bicycle Agents]
+    |-- requires --> [v1.0 Agent Type System]
+    |-- requires --> [GTFS Import (130 HCMC bus routes)]
+    |-- enhances --> [Multi-Modal Realism]
+
+[HBEFA Emissions]
+    |-- requires --> [Per-Step Agent Speed/Type Data]
+    |-- requires --> [Edge Gradient Data]
+    |-- enhances --> [Policy Evaluation (motorbike restriction zones)]
 ```
 
 ### Dependency Notes
 
-- **Motorbike sublane requires spatial index:** Lateral gap detection for filtering needs fast neighbor queries. R-tree must work before sublane model can be tested.
-- **Calibration requires MOE output:** Cannot validate the model without measurable outputs. Build output first, then calibration.
-- **Meso-micro requires working micro:** The micro model (IDM+MOBIL+sublane) must be correct before adding meso zones, otherwise you're interpolating toward a broken model.
-- **Prediction enhances routing but is not required for MVP:** Static shortest-path routing works for initial validation. Prediction adds realism for congested scenarios.
+- **Multi-GPU + Fixed-Point are inseparable:** Fixed-point ensures cross-GPU determinism. Without it, multi-GPU results diverge per-run, making calibration impossible. Ship together.
+- **CCH needs Prediction to justify its complexity:** CCH's value is 3ms dynamic weight updates. Without prediction, CCH is just "faster A*" -- still useful but doesn't justify the HIGH implementation cost. Build CCH after prediction overlay exists.
+- **Meso-micro may not be needed:** At 280K agents on 2-4 GPUs with ~8ms frame time and 92ms headroom (per `01-simulation-engine.md`), full-micro everywhere is likely feasible. Meso-micro is insurance. Defer unless performance proves otherwise.
+- **Scenario DSL requires calibrated baseline:** Running "what-if" scenarios against an uncalibrated model produces meaningless MOE comparisons. Calibration must precede scenario work.
+- **deck.gl sits atop a deep infrastructure stack:** Visualization requires WebSocket + Redis + FlatBuffers + API server + PMTiles. The frontend is the easy part; the backend plumbing is the work.
+- **API server is the platform unlock:** gRPC/REST transforms a desktop app into a platform. Everything external (visualization, notebooks, scenarios, monitoring) flows through the API. This is the single most important architectural change from v1.0.
 
 ## MVP Definition
 
-### Launch With (v1)
+### Launch With (v1.1 Core Platform)
 
-Minimum viable product -- enough to demonstrate the motorbike sublane model works on real HCMC road geometry.
+Minimum viable digital twin -- demonstrates 280K-agent simulation with web visualization and programmatic control.
 
-- [x] GPU compute pipeline (wgpu/WGSL) dispatching agent updates -- proves the architecture
-- [x] Road network from OSM (small HCMC area) -- real geometry, not toy networks
-- [x] IDM car-following for all vehicle types -- longitudinal behavior
-- [x] MOBIL lane-change for cars -- lateral behavior (discrete lanes)
-- [x] Motorbike sublane model with continuous lateral position -- THE differentiator
-- [x] Fixed-time signal control at intersections -- minimum intersection behavior
-- [x] OD-based demand with time-of-day profiles -- agents need origins/destinations
-- [x] Static shortest-path routing (CCH without dynamic weights) -- agents need routes
-- [x] Native wgpu 2D visualization -- see it working
-- [x] Tauri desktop shell with start/stop/speed controls -- interactive use
-- [x] Deterministic simulation via fixed-point arithmetic -- reproducibility
+- [ ] **Multi-GPU wave-front dispatch + fixed-point** -- Performance unlock for 280K agents. These two ship together.
+- [ ] **5-district HCMC network** -- Extends v1.0 District 1. Includes network cleaning, lane inference, HCMC-specific rules.
+- [ ] **gRPC/REST API** -- Platform transformation. Non-negotiable for any external integration.
+- [ ] **WebSocket streaming + Redis pub/sub** -- Enables web visualization and multi-viewer support.
+- [ ] **deck.gl 2D visualization** -- Primary web interface. ScatterplotLayer + HeatmapLayer + signal states.
+- [ ] **Parquet checkpoint/restart** -- Crash recovery and batch run foundation.
+- [ ] **Docker Compose deployment** -- Reproducible 7-service stack.
+- [ ] **Prometheus/Grafana monitoring** -- Operational visibility at scale.
+- [ ] **Data export (FCD, Parquet, CSV)** -- Minimum output for analysis.
+- [ ] **PMTiles map tiles** -- Base map for web visualization.
+- [ ] **Bus dwell + bicycle agents** -- Complete the multi-modal agent roster.
 
-### Add After Validation (v1.x)
+### Add After Core Validated (v1.1 Enhancement)
 
-Features to add once the core simulation loop is validated against visual inspection and basic traffic counts.
+Features to add once the multi-GPU simulation and web platform are proven.
 
-- [ ] Pedestrian social force model -- adds realism but not required for vehicle validation
-- [ ] Dynamic CCH weight updates + prediction ensemble -- enables congestion response
-- [ ] Bus dwell time model -- adds public transport realism
-- [ ] GEH calibration against HCMC traffic counts -- formal validation
-- [ ] MOE output (link travel times, intersection delay, queue lengths) -- quantitative analysis
-- [ ] Meso-micro hybrid with graduated buffer -- enables larger study areas
-- [ ] Checkpoint/restart (Parquet snapshots) -- long simulation runs
+- [ ] **CCH dynamic pathfinding** -- Replace v1.0 A* when routing becomes bottleneck at 500 reroutes/step.
+- [ ] **Prediction ensemble (BPR+ETS+historical)** -- Add once CCH is live for dynamic weight updates.
+- [ ] **GEH/RMSE calibration with Bayesian optimization** -- Add when traffic count data from HCMC DOT is available and all agent models are running.
+- [ ] **Pedestrian adaptive GPU workgroups** -- Upgrade when 20K pedestrians cause perf issues with basic spatial hash.
+- [ ] **Scenario DSL + batch runner + MOE comparison** -- Add after calibration validates the base model.
+- [ ] **HBEFA emissions** -- Add when policy evaluation use cases emerge.
+- [ ] **GeoJSON export** -- Add when GIS users request it.
 
 ### Future Consideration (v2+)
 
-Features to defer until the simulation model is validated and the architecture is stable.
-
-- [ ] FCD/Parquet/GeoJSON data export -- needs stable output format
-- [ ] Emissions model (HBEFA) -- bolt-on after vehicle dynamics are correct
-- [ ] Scenario DSL / batch runner -- needed for systematic analysis, not exploration
-- [ ] Web dashboard (deck.gl + REST API) -- multi-user/remote access
-- [ ] Actuated signal control -- adaptive signals for what-if analysis
-- [ ] Multi-GPU partitioning -- scaling to 280K agents
-- [ ] Bayesian parameter optimization (argmin) -- automated calibration
+- [ ] **Meso-micro hybrid** -- Defer unless full-micro hits performance wall at 280K on 2-4 GPUs. If frame time stays under 15ms, meso is unnecessary complexity.
+- [ ] **CesiumJS 3D** -- Presentation-only. Add for stakeholder demos once deck.gl 2D proves the platform.
+- [ ] **Actuated signal control** -- HCMC is overwhelmingly fixed-time. Minimal realism gain for HCMC specifically.
 
 ## Feature Prioritization Matrix
 
 | Feature | User Value | Implementation Cost | Priority |
 |---------|------------|---------------------|----------|
-| Motorbike sublane model | HIGH | HIGH | P1 |
-| GPU compute pipeline | HIGH | HIGH | P1 |
-| IDM car-following | HIGH | MEDIUM | P1 |
-| OSM road network import | HIGH | MEDIUM | P1 |
-| MOBIL lane-change | MEDIUM | MEDIUM | P1 |
-| Fixed-time signals | MEDIUM | LOW | P1 |
-| OD demand + ToD profiles | MEDIUM | MEDIUM | P1 |
-| CCH pathfinding (static) | MEDIUM | HIGH | P1 |
-| Native wgpu visualization | MEDIUM | MEDIUM | P1 |
-| Fixed-point determinism | MEDIUM | MEDIUM | P1 |
-| Pedestrian social force | MEDIUM | MEDIUM | P2 |
-| Dynamic routing + prediction | HIGH | HIGH | P2 |
-| GEH calibration | HIGH | MEDIUM | P2 |
-| MOE output | HIGH | MEDIUM | P2 |
-| Meso-micro hybrid | MEDIUM | HIGH | P2 |
-| Bus dwell model | LOW | LOW | P2 |
-| Checkpoint/restart | MEDIUM | MEDIUM | P2 |
-| Data export (FCD/Parquet) | MEDIUM | MEDIUM | P3 |
-| Emissions (HBEFA) | LOW | MEDIUM | P3 |
-| Scenario DSL | MEDIUM | HIGH | P3 |
-| Web dashboard (deck.gl) | MEDIUM | HIGH | P3 |
-| Multi-GPU partitioning | HIGH | HIGH | P3 |
+| Multi-GPU wave-front dispatch | HIGH | HIGH | P1 |
+| Fixed-point arithmetic | HIGH | HIGH | P1 |
+| 5-district HCMC network (OSM) | HIGH | MEDIUM | P1 |
+| gRPC/REST API | HIGH | MEDIUM | P1 |
+| WebSocket + Redis pub/sub | HIGH | MEDIUM | P1 |
+| deck.gl 2D visualization | HIGH | MEDIUM | P1 |
+| Parquet checkpoint/restart | HIGH | MEDIUM | P1 |
+| Data export (FCD, Parquet, CSV) | HIGH | LOW | P1 |
+| Docker Compose deployment | MEDIUM | LOW | P1 |
+| Prometheus/Grafana monitoring | MEDIUM | LOW | P1 |
+| PMTiles map tiles | MEDIUM | LOW | P1 |
+| Bus dwell + bicycle agents | MEDIUM | LOW | P1 |
+| CCH dynamic pathfinding | HIGH | HIGH | P2 |
+| Prediction ensemble | HIGH | MEDIUM | P2 |
+| GEH/RMSE calibration | HIGH | MEDIUM | P2 |
+| Pedestrian adaptive workgroups | MEDIUM | MEDIUM | P2 |
+| Scenario DSL + batch runner | MEDIUM | MEDIUM | P2 |
+| HBEFA emissions | LOW | LOW | P2 |
+| Meso-micro hybrid | MEDIUM | HIGH | P3 |
+| CesiumJS 3D visualization | LOW | MEDIUM | P3 |
+| Actuated signal control | LOW | LOW | P3 |
 
 **Priority key:**
-- P1: Must have for launch -- proves the motorbike-native GPU-accelerated concept
-- P2: Should have -- enables formal validation and larger study areas
-- P3: Nice to have -- scaling, export, and multi-user features
+- P1: Must have for v1.1 launch -- core digital twin platform with multi-GPU and web visualization
+- P2: Should have -- enables validation, prediction, and scenario analysis
+- P3: Nice to have -- defer unless specific need arises
 
 ## Competitor Feature Analysis
 
-| Feature | SUMO | VISSIM | Aimsun | MATSim | VELOS |
-|---------|------|--------|--------|--------|-------|
-| **Car-following** | Krauss (default), IDM | Wiedemann 74/99 | Gipps, IDM | Queue-based (not micro) | IDM only (calibratable for HCMC) |
-| **Lane-change** | LC2013, SL2015 | Proprietary | Proprietary | N/A (meso) | MOBIL (cars), sublane filtering (motorbikes) |
-| **Motorbike model** | Sublane (discretized, 0.8m resolution) | External Driver Model hack required | No native support | N/A | Continuous lateral position (Q8.8), native filtering+swarm |
-| **GPU acceleration** | No (CPU only) | No (CPU only) | No (CPU only) | No (CPU only, Java) | Yes (wgpu/WGSL compute shaders) |
-| **Pedestrians** | Built-in (basic) | PTV Viswalk (separate license) | Built-in module | Via contrib | Social force with adaptive GPU workgroups |
-| **Meso-micro hybrid** | SUMO-meso (separate mode) | No | Yes (integrated) | Yes (primary mode) | Graduated buffer zone (100m velocity interpolation) |
-| **Routing** | Dijkstra, A*, CH | Proprietary DTA | Dynamic Traffic Assignment | Iterative DTA | CCH with dynamic weight customization |
-| **Signal control** | Fixed, actuated, NEMA, TraCI | Fixed, actuated, adaptive, VAP | Fixed, actuated, adaptive | External | Fixed-time (POC), actuated (later) |
-| **Calibration** | Manual + external tools | Manual + Optima | Built-in calibration module | Cadyts contrib | GEH + Bayesian optimization (planned) |
-| **External API** | TraCI (TCP socket) | COM interface | Python/C++ SDK | Java API | gRPC + REST (planned) |
-| **Determinism** | Yes (default) | Stochastic (seed-based) | Stochastic (seed-based) | Yes | Yes (fixed-point arithmetic, cross-GPU) |
-| **Scale (real-time)** | ~50K agents | ~20-50K agents | ~100K agents (meso) | ~1M agents (meso, not real-time) | Target: 280K agents (GPU) |
-| **License** | Open source (EPL-2.0) | Commercial ($$$) | Commercial ($$$) | Open source (AGPL) | Open source (planned) |
-| **SE Asian traffic** | Possible with sublane hacks | Possible with EDM hacks | Poor native support | Not designed for micro | Native first-class support |
+| Feature | SUMO | VISSIM | Aimsun | LPSim (2024) | VELOS v1.1 |
+|---------|------|--------|--------|-------------|-------------|
+| **Car-following** | Krauss (default), IDM | Wiedemann 74/99 | Gipps, IDM | Simplified IDM | IDM (HCMC-calibrated) |
+| **Lane-change** | LC2013, SL2015 | Proprietary | Proprietary | N/A (meso) | MOBIL + sublane filtering |
+| **Motorbike sublane** | SL2015 (discrete, 0.8m slots) | External Driver Model hack | No native support | None | Continuous lateral (FixedQ8_8) |
+| **GPU compute** | None (CPU only) | None (CPU only) | None (CPU only) | CUDA multi-GPU (meso) | wgpu multi-GPU (micro) |
+| **Scale (real-time)** | ~50-100K (CPU bound) | ~20-50K (CPU bound) | ~100K (meso) | 2.8M (meso, batch) | 280K (micro, real-time) |
+| **Pathfinding** | Dijkstra/A*/CH | Proprietary DTA | Proprietary | BFS-like | CCH (3ms dynamic update) |
+| **Prediction** | None built-in | Limited | Aimsun Predict (ML) | None | In-process BPR+ETS+historical |
+| **Meso-micro hybrid** | Separate mode | No | Yes (flagship) | Meso only | Graduated buffer (P3) |
+| **Web visualization** | SUMO-GUI (desktop) | Desktop only | Desktop only | None | deck.gl 2D + CesiumJS 3D |
+| **API** | TraCI (TCP socket) | COM interface | Python/C++ SDK | None | gRPC + REST + WebSocket |
+| **Calibration** | Manual + external tools | Built-in optimizer | Built-in optimizer | None | GEH + Bayesian (argmin) |
+| **Emissions** | HBEFA via external tools | EnViVer integration | None built-in | None | HBEFA native (Rust) |
+| **Scenario comparison** | XML scenarios, manual | COM scripting | Built-in | None | DSL + batch runner + MOE |
+| **Checkpoint** | State save (XML) | Snapshot | Snapshot | None | Parquet (compressed, rolling) |
+| **Determinism** | Yes (CPU, single-thread) | Stochastic (seed) | Stochastic (seed) | Not specified | Yes (fixed-point, cross-GPU) |
+| **License** | EPL-2.0 (open) | Commercial | Commercial | Research | Proprietary (TBD) |
 
-### Key Competitive Gaps VELOS Fills
-
-1. **No competitor has native motorbike-dominant mixed traffic support.** SUMO's sublane is the closest but requires discretization and manual tuning. VISSIM requires External Driver Model development. Aimsun has no motorcycle model. Researchers working on SE Asian traffic consistently report struggling with all existing tools.
-
-2. **No competitor uses GPU compute.** All are CPU-bound, limiting real-time scale to 20-100K agents. VELOS targets 280K agents in real-time via GPU compute shaders.
-
-3. **No competitor offers cross-GPU deterministic simulation.** Fixed-point arithmetic is unique to VELOS and valuable for reproducible research.
+**Key competitive positions for v1.1:**
+1. **Only GPU-accelerated microscopic traffic sim.** LPSim is GPU but mesoscopic only.
+2. **Only sim with native motorbike sublane at 200K+ scale.** SUMO's SL2015 is discrete slots, not continuous.
+3. **Only sim with CCH dynamic routing.** All competitors use Dijkstra/A*/CH requiring full rebuild for dynamic weights.
+4. **Web-native visualization platform.** All competitors are desktop-first.
+5. **Cross-GPU deterministic simulation.** No competitor offers bitwise-identical results across GPU vendors.
 
 ## Sources
 
-- [SUMO Documentation - Sublane Model](https://sumo.dlr.de/docs/Simulation/SublaneModel.html) -- SUMO's discretized sublane approach
-- [SUMO at a Glance](https://sumo.dlr.de/docs/SUMO_at_a_Glance.html) -- SUMO feature overview
-- [PTV VISSIM Product Page](https://www.ptvgroup.com/en-us/products/ptv-vissim) -- VISSIM capabilities
-- [Aimsun Next Editions](https://www.aimsun.com/editions/) -- Aimsun feature tiers
-- [MATSim.org](https://www.matsim.org/) -- MATSim capabilities
-- [VISSIM Motorcycle Simulation for HCMC](https://www.researchgate.net/publication/353345030_Application_of_VISSIM_microsimulation_model_for_the_motorcycle_traffic_in_Ho_Chi_Minh_City) -- confirms VISSIM struggles with HCMC motorbikes
-- [GPU-accelerated Traffic Simulation (2024)](https://arxiv.org/html/2406.10661v1) -- 88x speedup with GPU microsimulation
-- [FHWA Traffic Microsimulation Guidelines](https://ops.fhwa.dot.gov/trafficanalysistools/tat_vol3/sect5.htm) -- calibration/validation standards, GEH criteria
-- [SUMO TraCI Documentation](https://sumo.dlr.de/docs/TraCI.html) -- TraCI API features
-- [VISSIM motorcycle in Chiang Mai](https://www.mdpi.com/2412-3811/10/4/97) -- External Driver Model for motorcycle filtering
+- [LPSim multi-GPU traffic simulation (UC Berkeley, 2024)](https://arxiv.org/html/2406.08496) - HIGH confidence (peer-reviewed)
+- [CCH Survey (Feb 2025)](https://arxiv.org/abs/2502.10519) - HIGH confidence (comprehensive academic survey)
+- [FHWA Traffic Analysis Toolbox - MOE definitions](https://ops.fhwa.dot.gov/publications/fhwahop08054/fhwahop08054.pdf) - HIGH confidence (official US DOT)
+- [FHWA Microsimulation Guidelines - Calibration](https://ops.fhwa.dot.gov/trafficanalysistools/tat_vol3/sect6.htm) - HIGH confidence (official)
+- [Aimsun Hybrid Meso-Micro documentation](https://docs.aimsun.com/next/22.0.2/UsersManual/HybridSimulator.html) - HIGH confidence (official docs)
+- [HBEFA 5.1 (Oct 2025)](https://www.hbefa.net/) - HIGH confidence (official)
+- [deck.gl framework](https://deck.gl/) - HIGH confidence (official)
+- [Hybrid meso-micro traffic simulation (Burghout)](https://www.diva-portal.org/smash/get/diva2:14700/FULLTEXT01.pdf) - HIGH confidence (academic)
+- [SUMO vs VISSIM comparison](https://thinktransportation.net/traffic-simulations-software-a-comparison-of-sumo-ptv-vissim-aimsun-and-cube/) - MEDIUM confidence
+- [Digital twin real-time calibration](https://www.sciencedirect.com/science/article/pii/S1474034622003160) - MEDIUM confidence
+- [Traffic simulation case studies review (2025)](https://ietresearch.onlinelibrary.wiley.com/doi/full/10.1049/itr2.70021) - MEDIUM confidence
+- VELOS architecture docs (`docs/architect/00-07`) - HIGH confidence (primary source)
 
 ---
-*Feature research for: GPU-accelerated traffic microsimulation (motorbike-native, Southeast Asian mixed traffic)*
-*Researched: 2026-03-06*
+*Feature research for: GPU-accelerated traffic microsimulation digital twin platform (v1.1 scale-up)*
+*Researched: 2026-03-07*

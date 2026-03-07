@@ -1,531 +1,595 @@
-# Architecture Research
+# Architecture Research: v1.0 to v2 Migration
 
-**Domain:** GPU-accelerated traffic microsimulation (desktop, macOS/Metal)
-**Researched:** 2026-03-06
-**Confidence:** MEDIUM — wgpu compute patterns are well-documented; Tauri+wgpu integration is immature with known issues; wave-front dispatch in WGSL has no direct precedent and requires careful design.
+**Domain:** GPU-accelerated traffic microsimulation platform migration (desktop to web + multi-GPU)
+**Researched:** 2026-03-07
+**Confidence:** HIGH -- based on existing v1.0 codebase analysis + authoritative v2 architecture documents
 
-## Standard Architecture
+## Executive Summary
 
-### System Overview
+The v1.0 VELOS system is a 6-crate desktop application (7,802 LOC) with CPU-side physics, A* routing, and winit+egui rendering. The v2 target is a 14-crate multi-service platform with GPU-accelerated physics, CCH routing, web visualization, gRPC/REST API, and Docker deployment. This document maps the precise migration path: which existing crates split, which extend, what new crates are needed, the dependency chains that determine build order, and the data flow changes required.
+
+The key architectural shift is from **monolithic desktop binary** (velos-gpu owns everything including app shell, simulation loop, rendering) to **separation of concerns** (simulation engine as headless service, API layer, web frontend as separate deployable).
+
+## Current Architecture (v1.0 -- 6 Crates)
 
 ```
-┌──────────────────────────────────────────────────────────────────────┐
-│                        Tauri v2 App Shell                            │
-│  ┌────────────────────────┐  ┌─────────────────────────────────────┐ │
-│  │   wgpu Render Surface  │  │  WebView (React+Vite Dashboard)     │ │
-│  │   Metal backend        │  │  Controls, metrics, charts          │ │
-│  │   Agent rendering      │  │  Communicates via Tauri IPC         │ │
-│  └───────────┬────────────┘  └──────────────┬──────────────────────┘ │
-│              │ GPU commands                  │ IPC events            │
-├──────────────┴──────────────────────────────┬┴───────────────────────┤
-│                     Simulation Core (Rust)                           │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐               │
-│  │  velos-core   │  │  velos-gpu   │  │  velos-net   │               │
-│  │  ECS (hecs)   │  │  wgpu Device │  │  Road Graph  │               │
-│  │  Scheduler    │◄─┤  Compute     │◄─┤  CCH Router  │               │
-│  │  Time Control │  │  Pipelines   │  │  R-tree      │               │
-│  └──────┬───────┘  └──────┬───────┘  └──────┬───────┘               │
-│         │                 │                  │                       │
-│  ┌──────▼───────┐  ┌──────▼───────┐  ┌──────▼───────┐               │
-│  │ velos-vehicle │  │velos-pedest. │  │ velos-signal │               │
-│  │ IDM+MOBIL     │  │ Social Force │  │ Fixed-Time   │               │
-│  │ Motorbike Sub │  │ Adaptive WG  │  │ Phase Ctrl   │               │
-│  └──────────────┘  └──────────────┘  └──────────────┘               │
+                    velos-gpu (BINARY: main.rs)
+                    ┌─────────────────────────────┐
+                    │  VelosApp (winit + egui)     │
+                    │  Renderer (wgpu 2D instanced)│
+                    │  Simulation loop             │
+                    │  ComputeDispatcher           │
+                    │  BufferPool                  │
+                    │  Camera2D                    │
+                    └──┬────┬───┬───┬───┬─────────┘
+                       │    │   │   │   │
+         ┌─────────────┘    │   │   │   └──────────────┐
+         │       ┌──────────┘   │   └─────────┐        │
+         v       v              v             v        v
+    velos-core  velos-net  velos-vehicle  velos-signal  velos-demand
+    ┌────────┐  ┌────────┐  ┌──────────┐  ┌─────────┐  ┌──────────┐
+    │Position│  │ graph  │  │ idm      │  │ control │  │od_matrix │
+    │Kinemat │  │osm_imp │  │ mobil    │  │ plan    │  │tod_prof  │
+    │Route   │  │routing │  │social_frc│  │         │  │ spawner  │
+    │cfl     │  │spatial │  │ sublane  │  │         │  │          │
+    │VhclType│  │project │  │ gridlock │  │         │  │          │
+    └────────┘  └────────┘  │ types    │  └─────────┘  └──────────┘
+                            └──────────┘
+```
+
+### Current Dependency Graph
+
+```
+velos-core      → (no deps -- leaf crate)
+velos-net       → (no deps -- leaf crate)
+velos-vehicle   → (no deps -- leaf crate)
+velos-signal    → (no deps -- leaf crate)
+velos-demand    → (no deps -- leaf crate)
+velos-gpu       → velos-core, velos-net, velos-vehicle, velos-demand, velos-signal
+```
+
+**Critical observation:** `velos-gpu` is the God Crate. It contains:
+1. wgpu device management
+2. GPU compute dispatch
+3. GPU rendering (2D instanced)
+4. Application shell (winit window, egui UI)
+5. Simulation loop orchestration
+6. Camera control
+7. Buffer management
+
+This conflation is the primary architectural debt that must be resolved.
+
+### Current Component Model (velos-core)
+
+```rust
+// CPU f64 positions, no fixed-point
+Position { x: f64, y: f64 }
+Kinematics { vx: f64, vy: f64, speed: f64, heading: f64 }
+RoadPosition { edge_index: u32, lane: u8, offset_m: f64 }
+Route { path: Vec<u32>, current_step: usize }
+VehicleType { Motorbike, Car, Pedestrian }  // no Bus, no Bicycle
+LateralOffset { lateral_offset: f64, desired_lateral: f64 }
+WaitState { stopped_since: f64, at_red_signal: bool }
+LaneChangeState { target_lane: u8, time_remaining: f64, started_at: f64 }
+```
+
+## Target Architecture (v2 -- 14 Crates + Dashboard)
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                     velos-viz (TypeScript/React)                     │
+│                     deck.gl + MapLibre + CesiumJS                   │
+│                     Standalone web app                               │
+└─────────────────────────────────┬───────────────────────────────────┘
+                                  │ WebSocket + REST
+┌─────────────────────────────────▼───────────────────────────────────┐
+│                     velos-api (Rust binary)                          │
+│                     tonic gRPC + axum REST/WS + Redis pub/sub        │
+└──────┬──────────────────────────┬───────────────────────────────────┘
+       │ gRPC                     │ Redis
+┌──────▼──────────────────────────▼───────────────────────────────────┐
+│                     velos-sim (Rust binary -- headless)              │
+│                     Simulation orchestrator (scheduler + frame loop) │
+│                     Depends on: core, gpu, net, vehicle, pedestrian, │
+│                       signal, meso, predict, demand, calibrate,      │
+│                       output, scene                                  │
+└─────────────────────────────────────────────────────────────────────┘
 │                                                                      │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐               │
-│  │  velos-meso   │  │velos-predict │  │ velos-demand │               │
-│  │  Queue Model  │  │ BPR+ETS     │  │ OD Matrices  │               │
-│  │  Buffer Zone  │  │ Ensemble    │  │ ToD Profiles │               │
-│  └──────────────┘  └──────────────┘  └──────────────┘               │
-├──────────────────────────────────────────────────────────────────────┤
-│                     GPU Compute Layer (wgpu/Metal)                   │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐               │
-│  │ IDM Pipeline  │  │ LaneChange   │  │ Social Force │               │
-│  │ (wave-front)  │  │ Pipeline     │  │ Pipeline     │               │
-│  └──────────────┘  └──────────────┘  └──────────────┘               │
-│  ┌──────────────────────────────────────────────────────┐           │
-│  │ Storage Buffers: Position[] | Kinematics[] | Params[]│           │
-│  └──────────────────────────────────────────────────────┘           │
-└──────────────────────────────────────────────────────────────────────┘
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐            │
+│  │velos-core│  │velos-gpu │  │velos-net │  │velos-veh │            │
+│  │ECS+sched │  │Device mgr│  │Graph+CCH │  │IDM+MOBIL │            │
+│  │Checkpoint│  │Multi-GPU │  │Spatial   │  │Sublane   │            │
+│  │Time ctrl │  │ShaderReg │  │OSM import│  │          │            │
+│  └──────────┘  └──────────┘  └──────────┘  └──────────┘            │
+│                                                                      │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐            │
+│  │velos-ped │  │velos-sig │  │velos-meso│  │velos-pred│            │
+│  │SocialFrc │  │Fixed-time│  │Queue mdl │  │BPR+ETS   │            │
+│  │Adapt WG  │  │Actuated  │  │Buffer zn │  │Ensemble  │            │
+│  └──────────┘  └──────────┘  └──────────┘  └──────────┘            │
+│                                                                      │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐                          │
+│  │velos-dem │  │velos-cal │  │velos-out │                          │
+│  │OD matrix │  │GEH/RMSE │  │FCD/Parq  │                          │
+│  │ToD prof  │  │Bayesian  │  │Emissions │                          │
+│  └──────────┘  └──────────┘  └──────────┘                          │
+│                                                                      │
+│  ┌──────────┐                                                       │
+│  │velos-scn │                                                       │
+│  │ScenarioDSL│                                                      │
+│  │Batch run │                                                       │
+│  └──────────┘                                                       │
+└─────────────────────────────────────────────────────────────────────┘
 ```
 
-### Component Responsibilities
+## Crate Migration Map
 
-| Component | Responsibility | Typical Implementation |
-|-----------|----------------|------------------------|
-| **velos-core** | ECS world (hecs), frame scheduler, time control, checkpoint | Owns the `World`, orchestrates per-frame pipeline steps, manages simulation clock |
-| **velos-gpu** | wgpu device/queue, compute pipeline registry, buffer pool, staging transfers | Creates `Device`, `Queue`, `ComputePipeline` objects; manages GPU memory lifecycle |
-| **velos-net** | Road network graph, OSM import, CCH pathfinding, rstar spatial index | Builds directed graph from OSM, constructs CCH for dynamic routing |
-| **velos-vehicle** | IDM car-following, MOBIL lane-change, motorbike sublane filtering | Defines WGSL shaders + CPU fallback for agent movement models |
-| **velos-pedestrian** | Social force model, adaptive workgroup spatial hashing | Prefix-sum compaction + density-aware dispatch |
-| **velos-signal** | Traffic signal controllers (fixed-time, actuated) | Phase/cycle logic, signal state buffer updates |
-| **velos-meso** | Mesoscopic queue model, graduated buffer zone transitions | BPR link travel times, meso-micro velocity matching |
-| **velos-predict** | Travel time prediction ensemble (BPR+ETS+historical) | ArcSwap overlay for lock-free reads during simulation |
-| **velos-demand** | OD matrices, time-of-day demand profiles, agent spawning | Reads demand config, spawns agents at origins over time |
-| **velos-viz** | React+TypeScript dashboard in Tauri webview | Charts, controls, simulation state display via IPC |
+### Crates That SPLIT
 
-## Recommended Project Structure
+| v1.0 Crate | Splits Into | Rationale |
+|------------|-------------|-----------|
+| **velos-gpu** | **velos-gpu** (library: device, buffers, multi-GPU, shader registry) + **velos-sim** (binary: simulation loop, frame pipeline orchestrator) + **velos-api** (binary: gRPC/REST/WS server) | The God Crate. Rendering moves to web (velos-viz). App shell (winit/egui) is replaced by headless server mode. Compute stays in velos-gpu. |
+| **velos-vehicle** | **velos-vehicle** (IDM, MOBIL, sublane, types) + **velos-pedestrian** (social force, adaptive workgroups) | Pedestrian social_force.rs currently lives in velos-vehicle but has fundamentally different GPU dispatch patterns (spatial hash + prefix-sum compaction vs. per-lane wave-front). Separate crate enables independent iteration. |
+
+### Crates That EXTEND (In-Place Modification)
+
+| v1.0 Crate | What Changes | LOC Impact |
+|------------|-------------|------------|
+| **velos-core** | Add: world.rs (hecs wrapper), scheduler.rs (frame pipeline), time.rs (clock control), checkpoint.rs (Parquet save/restore). Modify: components.rs (add Bus, Bicycle types; add fixed-point fields alongside f64). Modify: Position to include Q16.16 offset, Q8.8 lateral. | ~2x current size |
+| **velos-gpu** | Remove: app.rs, main.rs, camera.rs, renderer.rs, sim.rs, sim_*.rs (all app/render code). Add: partition.rs (METIS multi-GPU), pipeline.rs (registry), sync.rs (frame fences). Modify: device.rs (multi-adapter enumeration), buffers.rs (staging belt, double-buffer). | Net ~same LOC (remove render, add multi-GPU) |
+| **velos-net** | Replace: routing.rs (A* on petgraph) with CCH implementation. Add: cch.rs (CCH ordering + customization). Modify: osm_import.rs (5-district coverage, signal inference). Modify: graph.rs (edge capacity, lane structure enrichment). | ~2x current size |
+| **velos-signal** | Add: actuated.rs (vehicle-actuated controllers). Modify: controller.rs (signal state buffer for GPU consumption). | ~1.5x current size |
+| **velos-demand** | Modify: od_matrix.rs (larger matrices, 5 districts). Modify: tod_profile.rs (HCMC 9-band profile). Add: sensor_calib.rs (integration with calibration data). | ~1.3x current size |
+
+### New Crates to Create
+
+| New Crate | Responsibility | Depends On | Build Priority |
+|-----------|---------------|------------|----------------|
+| **velos-sim** | Headless simulation binary. Frame pipeline orchestrator. Replaces velos-gpu/main.rs and sim.rs. Publishes frame data to Redis. | core, gpu, net, vehicle, pedestrian, signal, meso, predict, demand, output, scene | After core+gpu+net+vehicle stabilize |
+| **velos-api** | gRPC server (tonic), REST gateway (axum), WebSocket relay with Redis pub/sub. | sim (via gRPC), Redis | After velos-sim produces frames |
+| **velos-viz** | TypeScript/React dashboard. deck.gl layers, MapLibre base map, CesiumJS 3D optional. pnpm workspace, not a Rust crate. | velos-api (via WebSocket/REST) | Can start early (mock data) |
+| **velos-pedestrian** | Social force model, adaptive workgroup spatial hashing, prefix-sum compaction. Extracted from velos-vehicle. | core (components), gpu (pipelines) | After vehicle model stabilizes |
+| **velos-meso** | Mesoscopic queue model, graduated buffer zone, meso-micro velocity matching. | core, net, vehicle | Late -- after micro sim is proven |
+| **velos-predict** | BPR+ETS+historical ensemble, ArcSwap overlay. | net (edge weights) | After CCH is working |
+| **velos-calibrate** | GEH statistic, Bayesian optimization (argmin), RMSE validation, parameter tuning. | core, net, demand, output | After output produces data |
+| **velos-output** | FCD recording, edge stats, emissions (HBEFA), Parquet/CSV/GeoJSON export. | core (ECS queries) | After sim loop is stable |
+| **velos-scene** | Scenario DSL parser, batch runner, MOE comparison. | sim, output, calibrate | Latest priority |
+
+## Component Responsibilities (v2)
+
+| Component | Responsibility | Communication Pattern |
+|-----------|----------------|----------------------|
+| **velos-core** | ECS world (hecs), frame scheduler, time control, checkpoint save/restore to Parquet. Defines all shared component types. | Direct function calls. Owns the `World`. All crates depend on core for component types. |
+| **velos-gpu** | wgpu device/queue management, multi-GPU partition manager, compute pipeline registry, buffer pool, shader registry. No rendering. | Called by velos-sim during frame pipeline. Returns updated buffers. |
+| **velos-net** | Road graph (petgraph), OSM import, CCH pathfinding (replaces A*), rstar spatial index, edge weight management. | Called by velos-sim for routing. Reads PredictionOverlay via ArcSwap. |
+| **velos-vehicle** | IDM car-following, MOBIL lane-change, motorbike sublane filtering, bicycle model. WGSL shader definitions. | Invoked during GPU compute pass. Reads ECS components, writes updated kinematics. |
+| **velos-pedestrian** | Social force model, adaptive workgroup spatial hashing, jaywalking, gap acceptance. | Separate GPU compute pass with prefix-sum compaction dispatch. |
+| **velos-signal** | Fixed-time and actuated signal controllers, phase cycling, signal state buffer. | CPU-side state machine. Writes signal buffer consumed by GPU shaders. |
+| **velos-meso** | Mesoscopic queue model (BPR travel time), graduated buffer zone, meso-micro velocity matching. | Manages far-field agents cheaply. Hands off to micro sim at buffer zone boundary. |
+| **velos-predict** | BPR+ETS+historical ensemble prediction, ArcSwap overlay for lock-free reads. | Background async task. Publishes PredictionOverlay consumed by velos-net. |
+| **velos-demand** | OD matrices, time-of-day profiles, agent spawning and despawning. | Spawns entities into ECS world at configured rates. |
+| **velos-calibrate** | GEH/RMSE statistics, Bayesian optimization via argmin, parameter sensitivity analysis. | Reads output data, adjusts IDM/demand parameters, triggers re-simulation. |
+| **velos-output** | FCD recording, edge aggregation, emissions (HBEFA), Parquet/CSV/GeoJSON export. | Queries ECS each frame, writes to output buffers, flushes periodically. |
+| **velos-scene** | Scenario DSL parser, batch runner, MOE metric comparison. | Drives velos-sim with different configs, collects output for comparison. |
+| **velos-sim** | Headless simulation binary. Frame pipeline: upload, dispatch, readback, advance, publish. | Entry point binary. Owns simulation loop. Publishes to Redis. Exposes gRPC for control. |
+| **velos-api** | gRPC (tonic) + REST (axum) + WebSocket relay with Redis pub/sub spatial tiling. | Connects to velos-sim via gRPC. Serves web clients. |
+| **velos-viz** | deck.gl 2D dashboard, MapLibre basemap, CesiumJS 3D optional. TypeScript/React. | Consumes WebSocket binary frames + REST queries from velos-api. |
+
+## Data Flow Changes (v1.0 vs v2)
+
+### v1.0: In-Process Monolith
 
 ```
-velos/
-├── crates/
-│   ├── velos-core/          # ECS world, scheduler, checkpoint
-│   │   ├── src/
-│   │   │   ├── lib.rs       # Public API
-│   │   │   ├── world.rs     # hecs World wrapper + component registration
-│   │   │   ├── scheduler.rs # Frame pipeline orchestration
-│   │   │   ├── time.rs      # Simulation clock, dt, speed control
-│   │   │   └── checkpoint.rs # ECS snapshot to/from bincode
-│   │   └── Cargo.toml
-│   ├── velos-gpu/           # wgpu device, pipelines, buffers
-│   │   ├── src/
-│   │   │   ├── lib.rs
-│   │   │   ├── device.rs    # wgpu Instance/Adapter/Device/Queue setup
-│   │   │   ├── pipeline.rs  # ComputePipeline creation + caching
-│   │   │   ├── buffers.rs   # BufferPool, staging, double-buffering
-│   │   │   └── sync.rs      # Frame fences, submission tracking
-│   │   ├── shaders/
-│   │   │   ├── idm.wgsl     # IDM car-following compute shader
-│   │   │   ├── lane_change.wgsl  # MOBIL + motorbike filtering
-│   │   │   ├── social_force.wgsl # Pedestrian social force
-│   │   │   ├── prefix_sum.wgsl   # Utility: parallel prefix sum
-│   │   │   └── fixed_point.wgsl  # Fixed-point arithmetic helpers
-│   │   └── Cargo.toml
-│   ├── velos-net/           # Road graph, routing, spatial index
-│   ├── velos-vehicle/       # Agent movement models
-│   ├── velos-pedestrian/    # Pedestrian-specific model
-│   ├── velos-signal/        # Traffic signal control
-│   ├── velos-meso/          # Mesoscopic queue model
-│   ├── velos-predict/       # Travel time prediction
-│   ├── velos-demand/        # Demand generation
-│   └── velos-app/           # Tauri app binary crate
-│       ├── src/
-│       │   ├── main.rs      # Tauri entry point
-│       │   ├── commands.rs  # Tauri IPC command handlers
-│       │   ├── render.rs    # wgpu render loop for visualization
-│       │   └── state.rs     # App state shared across IPC + render
-│       └── Cargo.toml
-├── dashboard/               # React+TypeScript frontend
-│   ├── src/
-│   │   ├── App.tsx
-│   │   ├── components/      # Dashboard panels
-│   │   └── hooks/           # Tauri IPC hooks
-│   ├── package.json
-│   └── vite.config.ts
-├── data/
-│   └── hcmc/                # HCMC-specific configs, OSM extracts
-├── proto/                   # Protobuf definitions (future gRPC)
-└── Cargo.toml               # Workspace root
+ECS World ──→ GPU Buffers ──→ Compute ──→ Readback ──→ ECS World
+    │                                                       │
+    └──→ egui UI (same process, same thread) ◄──────────────┘
 ```
 
-### Structure Rationale
+### v2: Multi-Service Architecture
 
-- **crates/:** Each crate has a single responsibility aligned with a simulation subsystem. This enables independent testing, compilation caching, and clear dependency direction.
-- **velos-gpu/shaders/:** WGSL shaders co-located with the GPU crate. Validated by naga at build time.
-- **velos-app/:** Separate binary crate for the Tauri application, depending on all library crates. Keeps simulation logic testable without the app shell.
-- **dashboard/:** Separate pnpm workspace for the React frontend. Tauri builds it via Vite.
+```
+ECS World ──→ GPU Buffers ──→ Compute ──→ Readback ──→ ECS World
+    │                                                       │
+    │              velos-sim (headless binary)               │
+    │                        │                               │
+    │                        │ Redis pub/sub                 │
+    │                        │ (tile:x:y channels)           │
+    │                        ▼                               │
+    │                  velos-api                              │
+    │              (gRPC + REST + WS)                         │
+    │                   │         │                           │
+    │              WebSocket   REST                           │
+    │                   │         │                           │
+    │                   ▼         ▼                           │
+    │               velos-viz (browser)                       │
+    │            deck.gl + MapLibre                           │
+    │                                                        │
+    └──→ velos-output ──→ Parquet files                      │
+    └──→ velos-predict ──→ ArcSwap ──→ velos-net (CCH)  ────┘
+```
+
+### Key Data Flow Differences
+
+| Flow | v1.0 | v2 |
+|------|------|-----|
+| **Agent state cycle** | ECS → GPU → ECS (in-process, ~3ms) | Same, but within velos-sim headless binary |
+| **UI updates** | Direct egui calls in same thread | Redis pub/sub → WebSocket → browser (adds ~5ms latency) |
+| **User commands** | egui button → function call | Browser → WebSocket → velos-api → gRPC → velos-sim |
+| **Pathfinding** | A* on petgraph (~0.5ms/query) | CCH (~0.02ms/query), 25x faster, dynamic weights |
+| **Rendering** | wgpu 2D instanced (in-process) | deck.gl WebGL in browser (separate process) |
+| **Checkpoint** | Not implemented | ECS → Parquet (velos-core), ~200ms for 280K agents |
+| **Metrics** | egui dashboard (in-process) | Prometheus export → Grafana |
+
+## Detailed Migration Steps
+
+### Step 1: Decompose velos-gpu (The God Crate Split)
+
+This is the highest-priority and highest-risk migration step. The current `velos-gpu` contains 14 source files serving 3 distinct roles.
+
+**Files to REMOVE from velos-gpu (move to velos-sim):**
+- `main.rs` -- application entry point, becomes velos-sim binary
+- `app.rs` -- VelosApp (winit+egui app shell), replaced by headless server
+- `sim.rs` -- simulation loop orchestration, moves to velos-sim
+- `sim_helpers.rs` -- simulation helper functions, moves to velos-sim
+- `sim_lifecycle.rs` -- init/reset/step logic, moves to velos-sim
+- `sim_mobil.rs` -- MOBIL integration glue, moves to velos-sim
+- `sim_render.rs` -- render frame logic, removed (web replaces)
+- `sim_snapshot.rs` -- snapshot logic, migrates to velos-core checkpoint
+- `camera.rs` -- Camera2D, removed (deck.gl handles camera)
+- `renderer.rs` -- GPU-instanced 2D rendering, removed (deck.gl replaces)
+
+**Files that STAY in velos-gpu (library crate):**
+- `lib.rs` -- public API (simplified)
+- `device.rs` -- wgpu device management (extended for multi-adapter)
+- `buffers.rs` -- buffer pool (extended for staging belt, double-buffer)
+- `compute.rs` -- compute dispatcher (extended for wave-front)
+- `error.rs` -- error types
+
+**New files in velos-gpu:**
+- `partition.rs` -- METIS graph partitioning, GpuPartition struct
+- `pipeline.rs` -- PipelineRegistry (pre-created compute pipelines)
+- `sync.rs` -- frame fences, submission index tracking
+- `transfer.rs` -- boundary agent inbox/outbox protocol
+
+After this split, `velos-gpu` becomes a **library crate** (no binary). It provides GPU abstraction consumed by `velos-sim`.
+
+### Step 2: Extract velos-pedestrian from velos-vehicle
+
+**File to MOVE:** `velos-vehicle/src/social_force.rs` becomes `velos-pedestrian/src/social_force.rs`
+
+**New files in velos-pedestrian:**
+- `spatial_hash.rs` -- density-aware spatial hashing
+- `prefix_sum.rs` -- GPU prefix-sum compaction
+- `adaptive_workgroup.rs` -- dynamic workgroup sizing
+- `crossing.rs` -- jaywalking logic, gap acceptance
+- `params.rs` -- HCMC pedestrian parameters
+
+**velos-vehicle retains:**
+- `idm.rs`, `mobil.rs`, `sublane.rs`, `gridlock.rs`, `types.rs`
+
+**Add to velos-vehicle:**
+- `bicycle.rs` -- bicycle sublane model (rightmost, no filtering)
+- `bus.rs` -- bus dwell time model, stop logic
+
+### Step 3: Upgrade velos-core Components
+
+The current component model uses f64 and simple types. The v2 model needs:
+
+```rust
+// v1.0 (current)
+pub struct Position { pub x: f64, pub y: f64 }
+
+// v2 (target) -- must coexist during migration
+pub struct Position {
+    pub edge_id: u32,
+    pub lane_idx: u8,
+    pub offset: FixedQ16_16,    // NEW: fixed-point
+    pub lateral: FixedQ8_8,     // NEW: fixed-point sublane
+}
+```
+
+**Migration strategy:** Add v2 component types alongside v1 types. Use a feature flag `v2-components` to switch. This allows incremental migration without breaking existing tests.
+
+**New modules in velos-core:**
+- `world.rs` -- hecs World wrapper with GPU index mapping
+- `scheduler.rs` -- frame pipeline orchestrator (sequence of system passes)
+- `time.rs` -- simulation clock with speed control (1x, 5x, 20x)
+- `checkpoint.rs` -- ECS snapshot to/from Parquet (arrow-rs)
+- `fixed_point.rs` -- Q16.16, Q12.20, Q8.8 types with arithmetic
+
+### Step 4: Upgrade velos-net Routing
+
+Replace A* with CCH. The petgraph graph structure stays but routing.rs is rewritten.
+
+**Current:** `routing.rs` -- A* via `petgraph::algo::astar`
+**Target:** `cch.rs` -- Customizable Contraction Hierarchies
+
+**Migration:** Keep the old `routing.rs` as `routing_astar.rs` behind a feature flag. New default is CCH. This enables fallback if CCH spike fails.
+
+### Step 5: Create Service Layer (velos-sim, velos-api, velos-viz)
+
+This is where the desktop-to-web migration happens.
+
+**velos-sim (Rust binary -- headless):**
+- Absorbs simulation loop from velos-gpu
+- No windowing, no rendering, no UI
+- Publishes frame data to Redis
+- Exposes gRPC service for control (start/stop/step/checkpoint)
+- Can run standalone for benchmarking
+
+**velos-api (Rust binary -- server):**
+- tonic gRPC server connecting to velos-sim
+- axum REST gateway for convenience queries
+- WebSocket relay consuming Redis pub/sub tile channels
+- Stateless, horizontally scalable
+
+**velos-viz (TypeScript/React -- pnpm workspace):**
+- deck.gl ScatterplotLayer for 280K agent positions
+- MapLibre basemap with PMTiles
+- KPI dashboard with charts
+- WebSocket client consuming binary tile frames
+- CesiumJS 3D (optional, stretch goal)
+
+## v2 Dependency Graph
+
+```
+Level 0 (leaf crates, no workspace deps):
+    velos-core         (components, checkpoint, time, CFL)
+
+Level 1 (depend on core only):
+    velos-net          (core: component types for edge/junction)
+    velos-vehicle      (core: component types for agents)
+    velos-signal       (core: component types for signal state)
+    velos-demand       (core: component types for spawning)
+
+Level 2 (depend on core + one Level 1):
+    velos-gpu          (core: component types for buffer layout)
+    velos-pedestrian   (core: component types)
+    velos-predict      (core, net: edge weights)
+    velos-meso         (core, net, vehicle: agent transition)
+    velos-output       (core: ECS queries for recording)
+    velos-calibrate    (core, net, demand, output: parameter tuning)
+
+Level 3 (integration crates):
+    velos-scene        (core, net, demand, output, calibrate: scenario orchestration)
+
+Level 4 (binary crates):
+    velos-sim          (ALL library crates: simulation binary)
+    velos-api          (depends on velos-sim via gRPC, not Cargo dep)
+
+Separate workspace:
+    velos-viz          (TypeScript, connects via network to velos-api)
+```
+
+## Suggested Build Order (Dependency-Driven)
+
+The build order must respect dependency chains while maximizing parallelism. Below is ordered by phases with explicit dependencies.
+
+### Phase A: Foundation Refactoring (Weeks 1-4)
+
+These steps unblock everything else and can be partially parallelized.
+
+| Order | Task | Depends On | Unblocks |
+|-------|------|------------|----------|
+| A.1 | **Split velos-gpu**: extract sim loop, renderer, app shell into separate module boundaries. Keep compiling as single crate initially, but isolate the code. | Nothing | A.3, A.4 |
+| A.2 | **Extend velos-core**: add world.rs, scheduler.rs, time.rs, fixed_point.rs. Add v2 component types with feature flag. | Nothing | A.3, B.1, B.2, B.3 |
+| A.3 | **Create velos-sim binary**: move extracted sim loop code from velos-gpu into velos-sim. Make velos-gpu a pure library crate. At this point, the old winit/egui app stops working -- this is intentional. | A.1, A.2 | B.4, C.1 |
+| A.4 | **velos-viz scaffold**: React+Vite project, deck.gl + MapLibre rendering HCMC basemap from PMTiles. Mock WebSocket data for agent dots. | Nothing (independent) | C.2 |
+
+**Parallel tracks:** A.1+A.2 can run simultaneously. A.4 is fully independent. A.3 blocks on A.1+A.2.
+
+### Phase B: Core Engine Upgrades (Weeks 5-12)
+
+Upgrade the simulation models to v2 specifications.
+
+| Order | Task | Depends On | Unblocks |
+|-------|------|------------|----------|
+| B.1 | **velos-net: CCH routing**: Replace A* with CCH. Keep A* as fallback. Spike S3 first. | A.2 (component types) | B.5 |
+| B.2 | **velos-gpu: multi-GPU**: Multi-adapter enumeration, METIS partition, boundary protocol. Spike S2 first. | A.2, A.3 | B.6 |
+| B.3 | **velos-gpu: wave-front dispatch**: Per-lane Gauss-Seidel WGSL shaders. Spike S1 first. | A.2, A.3 | B.6 |
+| B.4 | **Extract velos-pedestrian**: Move social_force.rs out of velos-vehicle. Add adaptive workgroup dispatch. | A.2, A.3 | B.6 |
+| B.5 | **velos-predict**: BPR+ETS+historical ensemble, ArcSwap overlay. | B.1 (CCH for weight customization) | B.6 |
+| B.6 | **velos-sim integration**: Wire all upgraded crates into the frame pipeline. 280K agent benchmark. | B.1-B.5 | C.1 |
+
+**Parallel tracks:** B.1, B.2, B.3, B.4 can all proceed in parallel after Phase A completes. B.5 needs B.1. B.6 is the integration point.
+
+### Phase C: Service Layer (Weeks 10-16, overlaps Phase B)
+
+Build the web platform while engine upgrades proceed.
+
+| Order | Task | Depends On | Unblocks |
+|-------|------|------------|----------|
+| C.1 | **velos-sim Redis publishing**: Add Redis pub/sub output to velos-sim. Spatial tiling for frame data. | A.3 (velos-sim exists) | C.2 |
+| C.2 | **velos-api**: gRPC server, WebSocket relay consuming Redis, REST gateway. | C.1 | C.3 |
+| C.3 | **velos-viz live integration**: Replace mock WebSocket data with real frames from velos-api. | C.2, A.4 | D.1 |
+| C.4 | **velos-core: checkpoint**: Parquet save/restore via arrow-rs. | A.2 | D.2 |
+
+### Phase D: Analytics and Calibration (Weeks 14-24)
+
+| Order | Task | Depends On | Unblocks |
+|-------|------|------------|----------|
+| D.1 | **velos-output**: FCD recording, edge stats, Parquet export. | B.6 (sim produces data) | D.2 |
+| D.2 | **velos-calibrate**: GEH/RMSE framework, argmin integration. | D.1, C.4 | D.4 |
+| D.3 | **velos-meso**: Queue model, graduated buffer zone. | B.6 | D.4 |
+| D.4 | **velos-scene**: Scenario DSL, batch runner, MOE comparison. | D.1, D.2 | Done |
+
+### Phase E: Hardening (Weeks 20-28)
+
+| Order | Task | Depends On |
+|-------|------|------------|
+| E.1 | Fixed-point arithmetic (optional, based on spike results) | B.3 |
+| E.2 | CesiumJS 3D (stretch) | C.3 |
+| E.3 | Load testing (100 WebSocket viewers) | C.2 |
+| E.4 | Docker Compose deployment | All services exist |
+| E.5 | Prometheus/Grafana monitoring | E.4 |
+
+## Critical Dependency Chain (Longest Path)
+
+```
+A.1 (split velos-gpu)
+  → A.3 (create velos-sim)
+    → B.3 (wave-front dispatch)
+      → B.6 (integration, 280K benchmark)
+        → D.1 (output)
+          → D.2 (calibration)
+            → D.4 (scenarios)
+```
+
+**Bottleneck:** The GPU engine work (A.1 → A.3 → B.2/B.3 → B.6) is the critical path. The web platform (A.4 → C.1 → C.2 → C.3) runs in parallel and is not on the critical path.
 
 ## Architectural Patterns
 
-### Pattern 1: ECS-to-GPU Buffer Mapping (SoA Projection)
+### Pattern 1: Headless Simulation Server
 
-**What:** Project hecs component arrays into contiguous GPU storage buffers for compute dispatch. Each ECS component type maps to one GPU buffer. The CPU-side hecs world is the source of truth; GPU buffers are populated per-frame from ECS queries.
+**What:** velos-sim runs as a headless binary with no windowing or rendering. It produces simulation frames consumed by other services via Redis and gRPC.
 
-**When to use:** Every simulation frame where GPU compute needs agent data.
+**Why:** Decouples simulation performance from visualization. Simulation can run faster-than-real-time (20x) without rendering overhead. Multiple visualization clients can connect/disconnect without affecting the simulation.
 
-**Trade-offs:**
-- Pro: SoA layout matches GPU memory coalescing requirements (consecutive threads read consecutive memory)
-- Pro: hecs stores components in archetype tables that are already semi-contiguous
-- Con: Must maintain index mapping between hecs `Entity` IDs and GPU buffer indices
-- Con: Agent spawn/despawn requires compaction or free-list management in GPU buffers
-
-**Implementation approach:**
-
+**Implementation:**
 ```rust
-/// Maps hecs entities to GPU buffer slots
-pub struct GpuIndexMap {
-    entity_to_gpu: HashMap<Entity, u32>,
-    gpu_to_entity: Vec<Option<Entity>>,
-    free_list: Vec<u32>,
-    count: u32,
-}
+// velos-sim/src/main.rs
+#[tokio::main]
+async fn main() {
+    let config = SimConfig::from_args();
+    let world = World::new();
+    let gpu = GpuContext::new_multi_adapter(config.gpu_count).await;
+    let net = RoadNetwork::from_osm(&config.osm_path);
+    let redis = RedisClient::connect(&config.redis_url).await;
 
-/// Projects ECS components into a GPU storage buffer
-pub fn upload_positions(
-    world: &World,
-    index_map: &GpuIndexMap,
-    queue: &wgpu::Queue,
-    buffer: &wgpu::Buffer,
-) {
-    // Collect positions in GPU-index order
-    let mut data = vec![GpuPosition::zeroed(); index_map.count as usize];
-    for (entity, pos) in world.query::<&Position>().iter() {
-        if let Some(gpu_idx) = index_map.entity_to_gpu.get(&entity) {
-            data[*gpu_idx as usize] = pos.to_gpu();
+    // gRPC control server on background task
+    let (ctrl_tx, ctrl_rx) = mpsc::channel(64);
+    tokio::spawn(grpc_server(ctrl_tx, config.grpc_port));
+
+    // Simulation loop (runs on dedicated thread, not tokio)
+    std::thread::spawn(move || {
+        loop {
+            simulation_step(&mut world, &gpu, &net);
+            publish_frame(&redis, &world);  // Redis pub/sub
+            handle_commands(&ctrl_rx);       // gRPC commands
         }
-    }
-    queue.write_buffer(buffer, 0, bytemuck::cast_slice(&data));
+    });
 }
 ```
 
-**Key constraint:** Structs written to GPU buffers must be `#[repr(C)]` and implement `bytemuck::Pod + bytemuck::Zeroable` for safe casting to `&[u8]`.
+### Pattern 2: Redis Spatial Tiling for Frame Distribution
 
-### Pattern 2: Compute Pipeline Registry
+**What:** Simulation publishes frame data to Redis channels keyed by spatial tile. WebSocket relay pods subscribe only to tiles their clients are viewing.
 
-**What:** Pre-create and cache all `ComputePipeline` objects at startup. Pipelines are expensive to create (shader compilation), but using the same `PipelineLayout` across related pipelines avoids rebinding resources when switching between them.
+**Why:** Avoids broadcasting 280K agent positions to all clients. Each client receives only visible agents (~1K per tile). Enables horizontal scaling of WebSocket relay pods.
 
-**When to use:** Application startup. Never create pipelines during the simulation loop.
+**Tile schema:** `tile:{x}:{y}` channels, 500m x 500m tiles, 256 tiles for HCMC POC area.
 
-**Trade-offs:**
-- Pro: Zero pipeline creation cost during simulation
-- Pro: Shared bind group layouts reduce descriptor set switches
-- Con: All shaders must be known at startup (no dynamic shader generation)
+### Pattern 3: Feature-Flagged Component Migration
 
-**Implementation approach:**
+**What:** v2 component types coexist with v1 types during migration via Cargo feature flags.
 
-```rust
-pub struct PipelineRegistry {
-    idm_pipeline: wgpu::ComputePipeline,
-    lane_change_pipeline: wgpu::ComputePipeline,
-    social_force_pipeline: wgpu::ComputePipeline,
-    prefix_sum_pipeline: wgpu::ComputePipeline,
-    // Shared layout for agent data access
-    agent_bind_group_layout: wgpu::BindGroupLayout,
-}
+**Why:** Enables incremental migration. Existing 185 tests continue passing during transition. Each subsystem can migrate independently.
 
-impl PipelineRegistry {
-    pub fn new(device: &wgpu::Device) -> Self {
-        let agent_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("agent_data"),
-            entries: &[
-                // binding 0: Position[] storage buffer
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::COMPUTE,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: false },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-                // binding 1: Kinematics[], binding 2: Params[], etc.
-            ],
-        });
-        // Create pipelines sharing this layout...
-        todo!()
-    }
-}
+```toml
+# velos-core/Cargo.toml
+[features]
+default = ["v1-components"]
+v1-components = []
+v2-components = ["arrow-rs"]  # fixed-point, Parquet checkpoint
 ```
 
-### Pattern 3: Wave-Front Dispatch via workgroupBarrier
+## Anti-Patterns to Avoid
 
-**What:** Process agents within a lane sequentially (front-to-back) while processing different lanes in parallel. This is the Gauss-Seidel pattern: each agent reads its leader's already-updated state, eliminating stale data and collision risk.
+### Anti-Pattern 1: Big-Bang Migration
 
-**When to use:** IDM car-following compute dispatch. Each workgroup = one lane.
+**What people do:** Rewrite all 6 crates simultaneously to match v2 architecture.
+**Why it's wrong:** 7,800 LOC of working code becomes untestable for weeks. Regression risk is enormous. If multi-GPU doesn't work, you've also broken the single-GPU path.
+**Do this instead:** Incremental split. Keep v1.0 desktop app working as long as possible. Only break it at A.3 (velos-sim extraction) which is a deliberate, planned cut.
 
-**Trade-offs:**
-- Pro: Zero stale data, zero collision correction needed, provably convergent
-- Pro: 50K+ lanes provide sufficient workgroup parallelism for GPU saturation
-- Con: Sequential within-lane processing underutilizes threads within a workgroup (avg 5.6 agents/lane for 280K agents, only ~6 of 256 threads active per workgroup)
-- Con: workgroupBarrier must be called uniformly by ALL threads in the workgroup (WGSL spec requirement), so inactive threads must still participate in the barrier loop
+### Anti-Pattern 2: Premature Service Separation
 
-**Critical WGSL constraint:** `workgroupBarrier()` must be executed by all invocations in the workgroup uniformly. You cannot have conditional barriers where only some threads call it. The sequential loop pattern must have all threads enter the loop and call the barrier, with only the "active" thread doing real work in each iteration.
+**What people do:** Deploy velos-sim, velos-api, and velos-viz as separate Docker containers from day one.
+**Why it's wrong:** Development velocity requires fast iteration cycles. Docker rebuild + restart adds 30-60s per change. Debugging across containers is harder.
+**Do this instead:** Develop velos-sim and velos-api as separate Rust binaries in the same workspace, but run them locally without Docker during development. Docker Compose is for deployment testing and CI, not daily development.
 
-**Implementation approach:**
+### Anti-Pattern 3: Keeping the Desktop App Alive
 
-```wgsl
-@compute @workgroup_size(256)
-fn idm_wave_front(
-    @builtin(local_invocation_id) lid: vec3<u32>,
-    @builtin(workgroup_id) wgid: vec3<u32>,
-) {
-    let lane_id = wgid.x;
-    let lane_start = lane_offsets[lane_id];
-    let lane_count = lane_counts[lane_id];
+**What people do:** Maintain both the winit+egui desktop app AND the web dashboard, thinking "we might need both."
+**Why it's wrong:** Double the rendering code to maintain. The v2 architecture is a web platform; the desktop app adds no value once deck.gl visualization works.
+**Do this instead:** Accept the desktop app dies at Phase A.3. All visualization moves to web. If local development needs quick visual verification, use the web dashboard on localhost.
 
-    // Sequential wave-front: process agents front-to-back
-    // ALL threads participate in the loop for barrier uniformity
-    for (var i: u32 = 0u; i < lane_count; i = i + 1u) {
-        // Only thread 0 does work (sequential within lane)
-        if (lid.x == 0u) {
-            let agent_idx = lane_start + i;
-            let leader_idx = select(agent_idx - 1u, 0xFFFFFFFFu, i == 0u);
-            idm_update(agent_idx, leader_idx);
-        }
-        workgroupBarrier();  // ALL threads hit this uniformly
-    }
-}
-```
+### Anti-Pattern 4: Over-Abstracting the GPU Layer
 
-**Note on occupancy:** With only thread 0 active per workgroup, GPU compute units are heavily underutilized within each workgroup. The parallelism comes from dispatching ~50K workgroups (one per lane). For the ~1K agent POC scale, this is acceptable. At 280K scale, consider an alternative: sort agents into per-lane arrays on CPU, then dispatch with workgroup_size(1) and rely on wave-level parallelism across workgroups instead. This avoids wasting 255 threads per workgroup.
-
-### Pattern 4: Double-Buffered GPU Transfers
-
-**What:** Maintain two copies of agent data buffers. The GPU reads from the "front" buffer during compute dispatch while the CPU writes new/updated data to the "back" buffer. Buffers swap each frame after the GPU finishes.
-
-**When to use:** Every frame boundary where CPU needs to inject new agents or read back results.
-
-**Trade-offs:**
-- Pro: Eliminates CPU-GPU synchronization stalls during the frame
-- Pro: Staging buffer pattern is well-supported by wgpu
-- Con: 2x memory usage for agent buffers (52 bytes/agent * 2 * N, negligible at 1K-280K scale)
-- Con: Results are one frame delayed (acceptable at 10 Hz sim rate)
-
-**Key wgpu constraint:** While a buffer is mapped for CPU access, no GPU commands may access it. The staging buffer pattern (separate MAP_READ buffer + queue.write_buffer for uploads) avoids this entirely.
-
-### Pattern 5: Fixed-Point Arithmetic in WGSL
-
-**What:** Use `i32` integer arithmetic to represent position (Q16.16) and speed (Q12.20) in GPU shaders. This guarantees bitwise-identical results across GPU vendors (AMD, NVIDIA, Intel, Apple Silicon).
-
-**When to use:** All position and speed calculations in compute shaders.
-
-**Trade-offs:**
-- Pro: Cross-GPU determinism guaranteed (integer ops are deterministic everywhere)
-- Pro: Enables checkpoint validation — resume on different hardware, same results
-- Con: ~20% slower than float32 due to manual overflow handling
-- Con: WGSL lacks native i64, so 64-bit intermediate products require manual splitting into high/low 32-bit halves
-- Con: More complex shader code, harder to debug
-
-**Critical WGSL limitation:** WGSL has no native 64-bit integer type. Multiplying two Q16.16 values produces a 64-bit intermediate. The existing architecture doc shows a split approach (ah*bh, ah*bl, al*bh, al*bl) but this must be tested carefully for overflow with realistic traffic values. The `SHADER_INT64` feature exists in wgpu but is not universally supported and may not be available on Metal.
-
-**Fallback strategy:** If fixed-point performance is unacceptable or the i64 emulation is too error-prone, use float32 with the `@invariant` WGSL attribute on outputs. Accept "statistical equivalence" (positions within 1mm after 24h sim time) rather than bitwise determinism.
-
-## Data Flow
-
-### Per-Frame Simulation Pipeline
-
-```
-[Frame Start]
-    │
-    ▼
-[CPU] ECS Query: collect agent positions, kinematics, params
-    │
-    ▼
-[CPU→GPU] queue.write_buffer(): upload Position[], Kinematics[], Params[]
-    │
-    ▼
-[GPU Compute Pass 1] Lane-change desire (parallel across all agents)
-    │  reads: Position[], Kinematics[] (previous step)
-    │  writes: LaneChangeDecision[]
-    │
-    ▼
-[GPU Compute Pass 2] Wave-front IDM + lane-change execution (per-lane)
-    │  reads: Position[], Kinematics[], LaneChangeDecision[], IDMParams[]
-    │  writes: Position[], Kinematics[] (updated in-place)
-    │
-    ▼
-[GPU Compute Pass 3] Pedestrian social force (adaptive workgroups)
-    │  Phase A: count_per_cell (atomic histogram)
-    │  Phase B: prefix_sum (exclusive scan)
-    │  Phase C: scatter (compact into cell arrays)
-    │  Phase D: social_force (force computation per occupied cell)
-    │
-    ▼
-[GPU→CPU] Staging buffer map_async + readback
-    │
-    ▼
-[CPU] Apply results back to ECS World
-    │  - Update Position, Kinematics components
-    │  - Edge transition: advance route index if position > edge_length
-    │  - Signal state: update phase timers
-    │
-    ▼
-[CPU/rayon] Pathfinding: reroute ~50 agents per frame (staggered)
-    │
-    ▼
-[CPU] Demand: spawn/despawn agents per OD matrix + ToD profile
-    │
-    ▼
-[CPU→Tauri IPC] Push frame data to dashboard (positions for rendering, metrics)
-    │
-    ▼
-[Frame End]
-```
-
-### Data Ownership and Flow Direction
-
-```
-                     Owns             Reads              Writes
-velos-demand    ──→  OD matrices  ──→  velos-core     (spawn agents)
-velos-net       ──→  Road graph   ──→  velos-vehicle  (edge topology)
-                                  ──→  velos-gpu      (lane buffers)
-velos-core      ──→  ECS World    ──→  velos-gpu      (agent buffers)
-                                  ◄──  velos-gpu      (updated state)
-velos-gpu       ──→  Device/Queue ──→  WGSL shaders   (dispatch)
-velos-predict   ──→  Overlay      ──→  velos-net      (edge weights)
-velos-signal    ──→  Phase state  ──→  velos-vehicle  (stop/go)
-velos-app       ──→  Tauri window ──→  dashboard      (IPC events)
-                                  ◄──  dashboard      (user commands)
-```
-
-### Key Data Flows
-
-1. **Agent state cycle (hot path):** ECS → GPU buffers → compute dispatch → staging readback → ECS. This runs every frame (10 Hz). Must complete in <100ms. Target: <15ms p99.
-
-2. **Pathfinding (warm path):** velos-predict updates edge weights via ArcSwap. velos-net reads weights during CCH customization. Agents query routes through velos-core scheduler. ~50 reroutes per frame, staggered to avoid CPU spikes.
-
-3. **Demand injection (cold path):** velos-demand reads OD matrices and ToD curves. Spawns agents into ECS at configured rates. Runs once per simulation second (every 10 frames at 10 Hz).
-
-4. **Dashboard updates:** velos-app serializes frame summary (agent count, avg speed, frame time) and pushes via Tauri IPC `emit()`. Dashboard subscribes to events. Rendering of agent positions happens natively via wgpu, not through the webview.
-
-## Tauri + wgpu Integration Architecture
-
-### The Challenge
-
-Tauri v2 provides a native window with an embedded webview. Rendering wgpu content in the same window as the webview is not straightforward:
-
-- On Linux (GTK), the webview and wgpu fight for the same X11 surface, causing flickering. This issue was closed as "not planned" by the Tauri team.
-- On macOS, the webview (WKWebView) is an NSView child of the window's contentView. wgpu also needs access to the contentView to create a Metal surface. Coordination requires main-thread management.
-
-### Recommended Approach: Dual-Surface Architecture
-
-**Confidence: LOW** — this area is actively evolving and no production-quality pattern exists.
-
-Two viable approaches for macOS:
-
-**Option A: wgpu renders to the window surface, webview overlays on top (transparent)**
-
-```
-┌─────────────────────────────────────┐
-│  NSWindow                           │
-│  ┌───────────────────────────────┐  │
-│  │  WKWebView (transparent bg)  │  │  ← z-order: front
-│  │  Dashboard controls + metrics │  │
-│  └───────────────────────────────┘  │
-│  ┌───────────────────────────────┐  │
-│  │  CAMetalLayer (wgpu surface)  │  │  ← z-order: back
-│  │  Agent rendering              │  │
-│  └───────────────────────────────┘  │
-└─────────────────────────────────────┘
-```
-
-- Pro: Single window, clean UX
-- Con: Mouse event routing is complex (clicks on transparent webview area must pass through to wgpu)
-- Con: Requires Tauri plugin or platform-specific code to manage NSView z-ordering
-
-**Option B: Two separate windows (simulation + dashboard)**
-
-```
-┌──────────────────┐  ┌──────────────────┐
-│  Simulation Win   │  │  Dashboard Win    │
-│  wgpu full render │  │  WebView only     │
-│  Agent positions  │  │  Controls+metrics │
-│  Road network     │  │  Tauri IPC        │
-└──────────────────┘  └──────────────────┘
-```
-
-- Pro: No surface conflicts, simpler implementation
-- Pro: Each window manages its own rendering independently
-- Con: Less polished UX (two windows)
-- Con: Window synchronization (resize, move) adds complexity
-
-**Recommendation for POC:** Start with Option B (two windows). It avoids the surface conflict issues entirely. The simulation window uses wgpu natively (via winit or raw_window_handle from Tauri). The dashboard window is a standard Tauri webview. IPC connects them. Revisit Option A once the Tauri ecosystem matures this pattern.
-
-**Alternative to evaluate during spike:** Skip Tauri entirely for the simulation window. Use winit for the wgpu window and Tauri only for the dashboard. The winit window is a peer process or runs in the same Rust binary but on a separate thread. This gives full control over the GPU render loop.
-
-## Scaling Considerations
-
-| Scale | Architecture Adjustments |
-|-------|--------------------------|
-| ~1K agents (POC) | Single GPU, single compute pass, CPU-side sorting is fine. Frame time <<15ms. No optimization needed. |
-| ~50K agents | GPU sorting becomes worthwhile (bitonic sort on GPU). Leader index computation moves to GPU. |
-| ~280K agents | Per-lane wave-front may underutilize GPU — consider workgroup_size(1) with 50K dispatches. Double-buffering matters. Staging belt for uploads. |
-| ~1M+ agents | Multi-GPU partition required. METIS graph bisection. Boundary agent protocol. PCIe transfer budget becomes relevant. |
-
-### Scaling Priorities
-
-1. **First bottleneck: CPU→GPU transfer.** At 280K agents, uploading ~14MB per frame via `queue.write_buffer()` is fine (Metal can handle GB/s). But if the upload blocks the main thread, use `StagingBelt` for async writes.
-
-2. **Second bottleneck: Per-lane sorting.** Sorting 280K agents into ~50K lanes every frame on CPU takes ~1.5ms with rayon. At 1M+ agents, move sorting to a GPU compute pass (radix sort by lane_id + position).
-
-3. **Third bottleneck: Wave-front occupancy.** With avg 5.6 agents/lane and workgroup_size(256), 98% of threads are idle per workgroup. The 50K workgroups provide inter-workgroup parallelism, but this is inefficient. At scale, flatten to workgroup_size(1) or workgroup_size(32) and use subgroup operations.
-
-## Anti-Patterns
-
-### Anti-Pattern 1: AoS (Array-of-Structs) GPU Buffers
-
-**What people do:** Upload a single buffer of `AgentData { position, speed, params, route, ... }` structs.
-**Why it's wrong:** GPU threads in a wavefront access the same field of consecutive agents. AoS means these reads are strided (e.g., reading `speed` at offsets 0, 64, 128, ...) which defeats memory coalescing. Bandwidth drops 4-8x.
-**Do this instead:** SoA — separate buffers for `Position[]`, `Kinematics[]`, `Params[]`. Consecutive threads read consecutive memory addresses.
-
-### Anti-Pattern 2: Creating Pipelines Per Frame
-
-**What people do:** Call `device.create_compute_pipeline()` inside the simulation loop.
-**Why it's wrong:** Pipeline creation involves shader compilation. On Metal, this can take 10-50ms. Even cached, the creation path has allocation overhead.
-**Do this instead:** Create all pipelines at startup in a `PipelineRegistry`. Reuse the same pipeline objects every frame.
-
-### Anti-Pattern 3: Synchronous Buffer Readback
-
-**What people do:** Call `buffer.slice(..).map_async()` then immediately `device.poll(Maintain::Wait)` to block until the GPU finishes.
-**Why it's wrong:** Stalls the CPU while the GPU completes. Wastes the overlap opportunity where CPU can do pathfinding, demand, or IPC while GPU is computing.
-**Do this instead:** Submit GPU work, then do CPU work (pathfinding, demand spawning), then poll for GPU completion. Overlap CPU and GPU work within each frame.
-
-### Anti-Pattern 4: Float32 for Determinism-Critical Values
-
-**What people do:** Use `f32` for position and speed, assume results will be identical across hardware.
-**Why it's wrong:** IEEE 754 only guarantees results within rounding tolerance. Different GPU vendors may use fused multiply-add (FMA) or different rounding modes. Results diverge after thousands of steps.
-**Do this instead:** Use fixed-point i32 arithmetic for position (Q16.16) and speed (Q12.20). Or accept non-determinism and validate via statistical equivalence (positions within tolerance).
-
-### Anti-Pattern 5: Conditional workgroupBarrier
-
-**What people do:** Put `workgroupBarrier()` inside an `if` block so only active threads call it.
-**Why it's wrong:** WGSL spec requires barriers to be called uniformly by all invocations in the workgroup. Conditional barriers are undefined behavior and will produce incorrect results or GPU hangs on some drivers.
-**Do this instead:** All threads enter the loop and hit the barrier. Only the designated thread does actual computation within the loop body.
+**What people do:** Create a "GPU abstraction" that works for both compute and rendering, single and multi-GPU, with trait-based dispatch.
+**Why it's wrong:** Compute and rendering have fundamentally different dispatch patterns. Multi-GPU adds partition management that single-GPU doesn't need. The abstraction leaks everywhere.
+**Do this instead:** velos-gpu is specifically a compute library. It manages devices, pipelines, and buffers for simulation compute. Rendering is entirely web-side. Multi-GPU is a concrete implementation, not an abstract capability.
 
 ## Integration Points
 
 ### Internal Boundaries
 
-| Boundary | Communication | Notes |
-|----------|---------------|-------|
-| velos-core ↔ velos-gpu | Direct function calls. Core passes `&World` to GPU upload functions, GPU returns updated component data. | Same process, same thread (main sim thread). No serialization. |
-| velos-core ↔ velos-net | Direct function calls. Core asks net for routes, net reads edge weights from predict overlay. | CCH customization runs on rayon thread pool, results returned via channel. |
-| velos-app ↔ velos-core | Tauri IPC commands map to `SimController` trait methods (start, stop, set_speed, reset). | Commands are async (tokio). Simulation runs on a dedicated thread, controlled via `mpsc::channel`. |
-| velos-app ↔ dashboard | Tauri `emit()` for sim→dashboard events. Tauri `invoke()` for dashboard→sim commands. | Serialization: serde_json for small payloads. Consider bincode for position arrays if JSON is too slow. |
-| velos-gpu ↔ WGSL shaders | Bind group layouts define the contract. Shader reads/writes storage buffers. | Buffer layout must match between Rust structs (`#[repr(C)]`, bytemuck) and WGSL struct definitions. Any mismatch = silent corruption. |
-| velos-predict ↔ velos-net | ArcSwap<PredictionOverlay>. Predict publishes new overlay atomically. Net reads current overlay during route queries. | Lock-free. No mutex. Predict runs on background thread. |
+| Boundary | Communication | Migration Impact |
+|----------|---------------|------------------|
+| velos-sim ↔ velos-gpu | Direct function calls (same process) | No change from v1 pattern, just relocated |
+| velos-sim ↔ velos-core | Direct function calls (same process) | Scheduler orchestration is new |
+| velos-sim ↔ Redis | Async publish via tokio | NEW: requires Redis client (fred or redis-rs) |
+| velos-api ↔ velos-sim | gRPC (tonic) | NEW: requires protobuf definitions |
+| velos-api ↔ Redis | Async subscribe via tokio | NEW: requires Redis client |
+| velos-api ↔ velos-viz | WebSocket (binary) + REST (JSON) | NEW: FlatBuffers for binary frames |
+| velos-predict ↔ velos-net | ArcSwap<PredictionOverlay> | NEW: lock-free overlay pattern |
 
-### Dependency Graph (Build Order)
+### External Services
 
+| Service | Purpose | Integration |
+|---------|---------|-------------|
+| Redis | Frame pub/sub, job queue | fred or redis-rs crate, localhost in dev, Docker in prod |
+| Nginx | PMTiles serving, dashboard static files | Static config, no code integration |
+| Prometheus | Metrics scraping | prometheus-client crate, /metrics endpoint on velos-sim and velos-api |
+| Grafana | Dashboard visualization | Config-as-code, provisioned via Docker volume |
+
+## New Workspace Dependencies
+
+```toml
+# Additions to workspace Cargo.toml [workspace.dependencies]
+tonic = "0.12"           # gRPC server
+prost = "0.13"           # Protobuf codegen
+axum = "0.8"             # REST/WebSocket server
+tokio = { version = "1", features = ["full"] }
+fred = "9"               # Redis client (or redis = "0.27")
+arrow = "54"             # Parquet read/write
+parquet = "54"           # Parquet file format
+flatbuffers = "24"       # WebSocket binary protocol
+argmin = "0.10"          # Bayesian optimization
+arc-swap = "1"           # Lock-free overlay pattern
+prometheus-client = "0.22"  # Metrics
+tracing = "0.1"          # Structured logging
+tracing-subscriber = "0.3"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 ```
-Level 0 (no deps):     velos-gpu, velos-net
-Level 1:               velos-core (depends on velos-gpu, velos-net)
-Level 2:               velos-vehicle, velos-pedestrian, velos-signal (depend on velos-core, velos-gpu)
-Level 2:               velos-predict, velos-demand (depend on velos-net)
-Level 3:               velos-meso (depends on velos-vehicle, velos-net)
-Level 4:               velos-app (depends on everything)
-```
 
-### Suggested Build Order for Development
+## Scaling Considerations
 
-1. **velos-gpu** — Get wgpu device creation, buffer management, and a trivial compute shader running on Metal. This is the foundation spike. If wgpu+Metal has issues, discover them now.
-2. **velos-net** — OSM import, road graph construction, basic R-tree. Can be developed in parallel with velos-gpu since they share no dependencies.
-3. **velos-core** — ECS world with hecs, basic scheduler that uploads agent data to GPU and reads it back. Integration point between gpu and net.
-4. **velos-vehicle** — IDM shader in WGSL with fixed-point arithmetic. The core simulation model. Requires velos-gpu (pipelines) and velos-core (ECS).
-5. **velos-signal** — Fixed-time signal logic. Simple state machine. Enables intersection behavior.
-6. **velos-pedestrian** — Social force with adaptive workgroups. More complex GPU dispatch pattern. Build after vehicle model is proven.
-7. **velos-demand** — Agent spawning from OD matrices. Requires velos-net (graph) and velos-core (ECS).
-8. **velos-predict** — Ensemble prediction. Can be deferred — simulation works without dynamic rerouting.
-9. **velos-meso** — Mesoscopic model. Only needed when simulating large networks with mixed fidelity.
-10. **velos-app** — Tauri shell. Build last because simulation must be testable headless first. The Tauri integration can wrap a working simulation engine.
+| Scale | Architecture Adjustments |
+|-------|--------------------------|
+| 1.5K agents (current v1.0) | Single GPU, CPU physics, no Redis/API needed. Desktop app sufficient. |
+| 50K agents | Single GPU, GPU physics via wave-front. Redis+API optional. Web dashboard useful. |
+| 280K agents (v2 target) | Multi-GPU (2x), wave-front dispatch, Redis pub/sub required for visualization scale. Full service architecture. |
+| 1M+ agents (v3 future) | Multi-node, 8-16 GPUs. gRPC-based distributed simulation. K8s deployment. |
+
+### Scaling Priorities
+
+1. **First bottleneck: velos-gpu God Crate split.** Cannot add multi-GPU, cannot run headless, cannot serve API until the monolith is decomposed. This is the gating factor for all v2 work.
+
+2. **Second bottleneck: CCH routing.** A* at 0.5ms/query cannot support 500 reroutes/step at 10 Hz. CCH at 0.02ms/query enables dynamic rerouting. Block on Spike S3 result.
+
+3. **Third bottleneck: Redis frame throughput.** At 280K agents, 10 Hz, 256 tiles: ~2MB/frame through Redis. Redis handles this easily. The bottleneck is the WebSocket relay fan-out to 100+ clients. Solution: stateless relay pods, scale horizontally.
 
 ## Sources
 
-- [wgpu ComputePipeline docs](https://docs.rs/wgpu/latest/wgpu/struct.ComputePipeline.html) — HIGH confidence
-- [wgpu Buffer docs](https://docs.rs/wgpu/latest/wgpu/struct.Buffer.html) — HIGH confidence
-- [WGSL Specification (W3C)](https://www.w3.org/TR/WGSL/) — HIGH confidence
-- [Learn Wgpu tutorial](https://sotrh.github.io/learn-wgpu/beginner/tutorial4-buffer/) — HIGH confidence
-- [Rust wgpu Compute: Buffer Readback and Performance Tips](https://tillcode.com/rust-wgpu-compute-minimal-example-buffer-readback-and-performance-tips/) — MEDIUM confidence
-- [High Performance GPGPU with Rust and wgpu](https://dev.to/jaysmito101/high-performance-gpgpu-with-rust-and-wgpu-4l9i) — MEDIUM confidence
-- [FabianLars/tauri-v2-wgpu](https://github.com/FabianLars/tauri-v2-wgpu) — MEDIUM confidence (proof of concept, not production)
-- [Tauri v2 wgpu flickering issue #9220](https://github.com/tauri-apps/tauri/issues/9220) — HIGH confidence (confirmed bug, closed as not planned for Linux; macOS status unclear)
-- [Tauri discussion: render wgpu as webview overlay #11944](https://github.com/tauri-apps/tauri/discussions/11944) — MEDIUM confidence (community discussion, no resolution)
-- [WebGPU Compute Shader Basics](https://webgpufundamentals.org/webgpu/lessons/webgpu-compute-shaders.html) — HIGH confidence
-- [workgroupBarrier uniformity requirement](https://webgpu.rocks/wgsl/functions/synchronization-atomic/) — HIGH confidence
-- [wgpu StagingBelt docs](https://wgpu.rs/doc/wgpu/util/struct.StagingBelt.html) — HIGH confidence
-- VELOS architecture docs `docs/architect/00-07` — project-internal, authoritative
+- VELOS v1.0 codebase analysis (6 crates, Cargo.toml dependency graph) -- HIGH confidence
+- `docs/architect/00-architecture-overview.md` -- v2 component diagram, tech stack -- HIGH confidence (project-internal, authoritative)
+- `docs/architect/01-simulation-engine.md` -- multi-GPU, wave-front, fixed-point -- HIGH confidence
+- `docs/architect/02-agent-models.md` -- vehicle types, pedestrian adaptive workgroups -- HIGH confidence
+- `docs/architect/05-visualization-api.md` -- WebSocket scaling, gRPC contracts, deck.gl layers -- HIGH confidence
+- `docs/architect/06-infrastructure.md` -- Docker Compose, checkpoint, PMTiles -- HIGH confidence
+- `docs/architect/07-timeline-risks.md` -- phase plan, dependency DAG, go/no-go gates -- HIGH confidence
 
 ---
-*Architecture research for: GPU-accelerated traffic microsimulation (VELOS)*
-*Researched: 2026-03-06*
+*Architecture research for: VELOS v1.0 to v2 migration path*
+*Researched: 2026-03-07*
