@@ -96,7 +96,23 @@ struct AgentState {
     acceleration: i32,  // Q12.20
     cf_model: u32,      // 0=IDM, 1=Krauss
     rng_state: u32,
+    vehicle_type: u32,  // 0=Motorbike..6=Pedestrian
+    flags: u32,         // bit0=bus_dwelling, bit1=emergency_active, bit2=yielding
 }
+
+// Vehicle type constants (matches Rust VehicleType enum order)
+const VT_MOTORBIKE: u32 = 0u;
+const VT_CAR: u32 = 1u;
+const VT_BUS: u32 = 2u;
+const VT_BICYCLE: u32 = 3u;
+const VT_TRUCK: u32 = 4u;
+const VT_EMERGENCY: u32 = 5u;
+const VT_PEDESTRIAN: u32 = 6u;
+
+// Flag bitfield constants
+const FLAG_BUS_DWELLING: u32 = 1u;
+const FLAG_EMERGENCY_ACTIVE: u32 = 2u;
+const FLAG_YIELDING: u32 = 4u;
 
 @group(0) @binding(0) var<uniform> params: Params;
 @group(0) @binding(1) var<storage, read_write> agents: array<AgentState>;

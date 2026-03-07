@@ -91,6 +91,8 @@ mod gpu_benches {
                 acceleration: 0,
                 cf_model: if i % 3 == 0 { 1 } else { 0 }, // mix IDM + Krauss
                 rng_state: i as u32,
+                vehicle_type: 0,
+                flags: 0,
             });
         }
         agents

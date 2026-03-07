@@ -108,7 +108,11 @@ impl AgentSnapshot {
     pub fn half_width_for_type(vtype: VehicleType) -> f64 {
         match vtype {
             VehicleType::Motorbike => 0.25,
+            VehicleType::Bicycle => 0.3,
             VehicleType::Car => 0.9,
+            VehicleType::Bus => 1.3,
+            VehicleType::Truck => 1.2,
+            VehicleType::Emergency => 1.0,
             VehicleType::Pedestrian => 0.3,
         }
     }

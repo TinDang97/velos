@@ -56,6 +56,10 @@ impl SimWorld {
                         [0.2, 0.4, 0.9, 1.0] // blue: IDM car
                     }
                 }
+                VehicleType::Bus => [0.9, 0.9, 0.0, 1.0],        // yellow
+                VehicleType::Bicycle => [0.0, 0.9, 0.9, 1.0],     // cyan
+                VehicleType::Truck => [0.6, 0.4, 0.2, 1.0],       // brown
+                VehicleType::Emergency => [1.0, 0.0, 0.0, 1.0],   // red
                 VehicleType::Pedestrian => [0.9, 0.9, 0.9, 1.0],
             };
 
@@ -67,8 +71,8 @@ impl SimWorld {
             };
 
             match *vtype {
-                VehicleType::Motorbike => motorbikes.push(instance),
-                VehicleType::Car => cars.push(instance),
+                VehicleType::Motorbike | VehicleType::Bicycle => motorbikes.push(instance),
+                VehicleType::Car | VehicleType::Bus | VehicleType::Truck | VehicleType::Emergency => cars.push(instance),
                 VehicleType::Pedestrian => pedestrians.push(instance),
             }
         }

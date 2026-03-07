@@ -151,6 +151,8 @@ fn create_test_scenario() -> (Vec<GpuAgentState>, Vec<u32>, Vec<u32>, Vec<u32>) 
                 acceleration: 0,
                 cf_model,
                 rng_state: lane * 100 + i,
+                vehicle_type: 0,
+                flags: 0,
             });
         }
     }

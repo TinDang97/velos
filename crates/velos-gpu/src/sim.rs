@@ -329,6 +329,16 @@ impl SimWorld {
             let cf = cf_model.copied().unwrap_or(CarFollowingModel::Idm);
             let rng_seed = entity.id();
 
+            let vtype_gpu = match *vtype {
+                VehicleType::Motorbike => 0,
+                VehicleType::Car => 1,
+                VehicleType::Bus => 2,
+                VehicleType::Bicycle => 3,
+                VehicleType::Truck => 4,
+                VehicleType::Emergency => 5,
+                VehicleType::Pedestrian => 6,
+            };
+
             gpu_agents.push(GpuAgentState {
                 edge_id: rp.edge_index,
                 lane_idx: rp.lane as u32,
@@ -338,6 +348,8 @@ impl SimWorld {
                 acceleration: 0,
                 cf_model: cf as u32,
                 rng_state: rng_seed,
+                vehicle_type: vtype_gpu,
+                flags: 0,
             });
             entity_map.push(entity);
         }

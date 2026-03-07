@@ -543,14 +543,17 @@ mod tests {
             GpuAgentState {
                 edge_id: 0, lane_idx: 0, position: 100, lateral: 0,
                 speed: 50, acceleration: 0, cf_model: 0, rng_state: 0,
+                vehicle_type: 0, flags: 0,
             },
             GpuAgentState {
                 edge_id: 0, lane_idx: 0, position: 500, lateral: 0,
                 speed: 50, acceleration: 0, cf_model: 0, rng_state: 0,
+                vehicle_type: 0, flags: 0,
             },
             GpuAgentState {
                 edge_id: 0, lane_idx: 0, position: 300, lateral: 0,
                 speed: 50, acceleration: 0, cf_model: 0, rng_state: 0,
+                vehicle_type: 0, flags: 0,
             },
         ];
         let (offsets, counts, indices) = sort_agents_by_lane(&agents);
@@ -566,14 +569,17 @@ mod tests {
             GpuAgentState {
                 edge_id: 0, lane_idx: 0, position: 100, lateral: 0,
                 speed: 50, acceleration: 0, cf_model: 0, rng_state: 0,
+                vehicle_type: 0, flags: 0,
             },
             GpuAgentState {
                 edge_id: 0, lane_idx: 1, position: 200, lateral: 0,
                 speed: 50, acceleration: 0, cf_model: 1, rng_state: 42,
+                vehicle_type: 0, flags: 0,
             },
             GpuAgentState {
                 edge_id: 0, lane_idx: 0, position: 300, lateral: 0,
                 speed: 50, acceleration: 0, cf_model: 0, rng_state: 0,
+                vehicle_type: 0, flags: 0,
             },
         ];
         let (offsets, counts, indices) = sort_agents_by_lane(&agents);

@@ -31,6 +31,8 @@ fn sort_agents_by_lane_single_agent() {
         acceleration: 0,
         cf_model: CarFollowingModel::Idm as u32,
         rng_state: 0,
+        vehicle_type: 0,
+        flags: 0,
     }];
     let (offsets, counts, indices) = sort_agents_by_lane(&agents);
     assert_eq!(counts, vec![1]);
@@ -51,6 +53,8 @@ fn sort_agents_by_lane_multi_edge() {
             acceleration: 0,
             cf_model: CarFollowingModel::Idm as u32,
             rng_state: 0,
+            vehicle_type: 0,
+            flags: 0,
         },
         GpuAgentState {
             edge_id: 1,
@@ -61,6 +65,8 @@ fn sort_agents_by_lane_multi_edge() {
             acceleration: 0,
             cf_model: CarFollowingModel::Krauss as u32,
             rng_state: 1,
+            vehicle_type: 0,
+            flags: 0,
         },
     ];
     let (_offsets, counts, _indices) = sort_agents_by_lane(&agents);
@@ -71,11 +77,11 @@ fn sort_agents_by_lane_multi_edge() {
 }
 
 #[test]
-fn gpu_agent_state_size_32_bytes() {
+fn gpu_agent_state_size_40_bytes() {
     assert_eq!(
         std::mem::size_of::<GpuAgentState>(),
-        32,
-        "GpuAgentState must be 32 bytes for GPU alignment"
+        40,
+        "GpuAgentState must be 40 bytes for GPU alignment"
     );
 }
 

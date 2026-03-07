@@ -69,6 +69,8 @@ fn make_agent(edge_id: u32, lane: u32, position: i32, speed: i32) -> GpuAgentSta
         acceleration: 0,
         cf_model: 0,
         rng_state: 42,
+        vehicle_type: 0,
+        flags: 0,
     }
 }
 

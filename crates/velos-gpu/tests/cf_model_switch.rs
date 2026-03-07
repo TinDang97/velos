@@ -270,6 +270,8 @@ mod gpu_behavior {
                 acceleration: 0,
                 cf_model,
                 rng_state: i * 7 + 42, // Distinct RNG seeds.
+                vehicle_type: 0,
+                flags: 0,
             });
         }
 
@@ -339,6 +341,8 @@ mod gpu_behavior {
                 acceleration: 0,
                 cf_model: CarFollowingModel::Idm as u32,
                 rng_state: 100,
+                vehicle_type: 0,
+                flags: 0,
             },
             // Follower A (IDM).
             GpuAgentState {
@@ -350,6 +354,8 @@ mod gpu_behavior {
                 acceleration: 0,
                 cf_model: CarFollowingModel::Idm as u32,
                 rng_state: 200,
+                vehicle_type: 0,
+                flags: 0,
             },
             // Follower B (Krauss) -- on a different lane to isolate from IDM follower.
             GpuAgentState {
@@ -361,6 +367,8 @@ mod gpu_behavior {
                 acceleration: 0,
                 cf_model: CarFollowingModel::Krauss as u32,
                 rng_state: 200,
+                vehicle_type: 0,
+                flags: 0,
             },
         ];
 

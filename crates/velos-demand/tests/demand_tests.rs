@@ -178,8 +178,8 @@ fn spawner_vehicle_type_distribution() {
         let spawns = spawner.generate_spawns(hour as f64, 3600.0);
         for s in &spawns {
             match s.vehicle_type {
-                SpawnVehicleType::Motorbike => motorbike_count += 1,
-                SpawnVehicleType::Car => car_count += 1,
+                SpawnVehicleType::Motorbike | SpawnVehicleType::Bicycle => motorbike_count += 1,
+                SpawnVehicleType::Car | SpawnVehicleType::Bus | SpawnVehicleType::Truck | SpawnVehicleType::Emergency => car_count += 1,
                 SpawnVehicleType::Pedestrian => ped_count += 1,
             }
         }

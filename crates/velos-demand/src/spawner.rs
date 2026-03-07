@@ -15,10 +15,18 @@ use crate::tod_profile::TodProfile;
 
 /// Vehicle type for spawn requests. Kept local to avoid circular dependency
 /// with velos-vehicle. The integration layer (02-04) maps to the real enum.
+/// Vehicle type for spawn requests.
+///
+/// Order matches velos-core VehicleType for consistency.
+/// The integration layer maps to the real VehicleType enum.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum SpawnVehicleType {
     Motorbike,
     Car,
+    Bus,
+    Bicycle,
+    Truck,
+    Emergency,
     Pedestrian,
 }
 

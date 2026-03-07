@@ -49,6 +49,10 @@ impl SimWorld {
         let vtype = match req.vehicle_type {
             SpawnVehicleType::Motorbike => VehicleType::Motorbike,
             SpawnVehicleType::Car => VehicleType::Car,
+            SpawnVehicleType::Bus => VehicleType::Bus,
+            SpawnVehicleType::Bicycle => VehicleType::Bicycle,
+            SpawnVehicleType::Truck => VehicleType::Truck,
+            SpawnVehicleType::Emergency => VehicleType::Emergency,
             SpawnVehicleType::Pedestrian => VehicleType::Pedestrian,
         };
 
@@ -65,18 +69,21 @@ impl SimWorld {
         let vehicle_type_for_params = match vtype {
             VehicleType::Motorbike => velos_vehicle::types::VehicleType::Motorbike,
             VehicleType::Car => velos_vehicle::types::VehicleType::Car,
+            VehicleType::Bus => velos_vehicle::types::VehicleType::Bus,
+            VehicleType::Bicycle => velos_vehicle::types::VehicleType::Bicycle,
+            VehicleType::Truck => velos_vehicle::types::VehicleType::Truck,
+            VehicleType::Emergency => velos_vehicle::types::VehicleType::Emergency,
             VehicleType::Pedestrian => velos_vehicle::types::VehicleType::Pedestrian,
         };
         let idm_params = default_idm_params(vehicle_type_for_params);
 
         // Determine car-following model per agent.
-        // Motorbikes: always IDM (sublane model is IDM-based).
-        // Cars: ~30% Krauss, ~70% IDM (RNG-based; full demand-config-driven
-        // assignment will be wired when demand config is extended in Phase 6).
+        // Motorbikes + Bicycles: always IDM (sublane model is IDM-based).
+        // Cars, Buses, Trucks, Emergency: ~30% Krauss, ~70% IDM.
         // Pedestrians: no CarFollowingModel component (skip car-following entirely).
         let cf_model = match vtype {
-            VehicleType::Motorbike => Some(CarFollowingModel::Idm),
-            VehicleType::Car => {
+            VehicleType::Motorbike | VehicleType::Bicycle => Some(CarFollowingModel::Idm),
+            VehicleType::Car | VehicleType::Bus | VehicleType::Truck | VehicleType::Emergency => {
                 if self.rng.gen_ratio(3, 10) {
                     Some(CarFollowingModel::Krauss)
                 } else {
@@ -133,7 +140,8 @@ impl SimWorld {
             idm_params,
         );
 
-        if vtype == VehicleType::Motorbike {
+        if vtype == VehicleType::Motorbike || vtype == VehicleType::Bicycle {
+            // Sublane model vehicles: continuous lateral positioning.
             let edge = EdgeIndex::new(edge_idx as usize);
             let lane_count = g
                 .edge_weight(edge)
@@ -156,8 +164,12 @@ impl SimWorld {
                     desired_lateral: initial_lateral,
                 },
             ));
-        } else if vtype == VehicleType::Car {
-            // Cars get LateralOffset at lane 0 center so they render at correct lane position.
+        } else if vtype == VehicleType::Car
+            || vtype == VehicleType::Bus
+            || vtype == VehicleType::Truck
+            || vtype == VehicleType::Emergency
+        {
+            // Lane-based vehicles: LateralOffset at lane 0 center.
             let initial_lateral = (0.0 + 0.5) * 3.5; // lane 0 center = 1.75m
             self.world.spawn((
                 base_components.0,
@@ -332,8 +344,8 @@ impl SimWorld {
 
         for vtype in self.world.query_mut::<&VehicleType>().into_iter() {
             match *vtype {
-                VehicleType::Motorbike => motorbike_count += 1,
-                VehicleType::Car => car_count += 1,
+                VehicleType::Motorbike | VehicleType::Bicycle => motorbike_count += 1,
+                VehicleType::Car | VehicleType::Bus | VehicleType::Truck | VehicleType::Emergency => car_count += 1,
                 VehicleType::Pedestrian => ped_count += 1,
             }
         }
