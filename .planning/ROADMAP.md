@@ -15,7 +15,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 1: GPU Pipeline & Visual Proof** - Validate wgpu/Metal compute pipeline, f32 shaders, ECS-to-GPU round-trip, winit window with GPU-instanced dot/triangle renderer, benchmarks (completed 2026-03-06)
 - [x] **Phase 2: Road Network & Vehicle Models + egui** - Build HCMC road graph, IDM car-following, MOBIL lane-change, signals, A* routing, demand spawning, gridlock detection, egui dashboard and controls (completed 2026-03-07)
 - [x] **Phase 3: Motorbike Sublane & Pedestrians** - Continuous lateral positioning, basic social force pedestrians, mixed-traffic interactions (filtering, clustering) (completed 2026-03-07)
-- [ ] **Phase 4: MOBIL Wiring + Motorbike Jam Fix + Performance** - Wire MOBIL lane-change into sim loop, fix motorbike traffic jam clustering, optimize spatial query performance at 800+ agents, create Phase 2 VERIFICATION.md, fix documentation gaps
+- [x] **Phase 4: MOBIL Wiring + Motorbike Jam Fix + Performance** - Wire MOBIL lane-change into sim loop, fix motorbike traffic jam clustering, optimize spatial query performance at 800+ agents, create Phase 2 VERIFICATION.md, fix documentation gaps
 
 ## Phase Details
 
@@ -91,7 +91,7 @@ Plans:
 Plans:
 - [x] 04-01-PLAN.md -- Wire MOBIL into sim loop with gradual drift
 - [x] 04-02-PLAN.md -- Fix motorbike jam + optimize spatial query performance
-- [ ] 04-03-PLAN.md -- Phase 2 verification, documentation fixes
+- [x] 04-03-PLAN.md -- Phase 2 verification, documentation fixes
 
 ## Progress
 
@@ -103,4 +103,4 @@ Phases execute in numeric order: 1 -> 2 -> 3
 | 1. GPU Pipeline & Visual Proof | 2/2 | Complete   | 2026-03-06 |
 | 2. Road Network & Vehicle Models + egui | 4/4 | Complete   | 2026-03-07 |
 | 3. Motorbike Sublane & Pedestrians | 2/2 | Complete   | 2026-03-07 |
-| 4. MOBIL Wiring + Motorbike Jam Fix + Performance | 2/3 | In Progress | - |
+| 4. MOBIL Wiring + Motorbike Jam Fix + Performance | 3/3 | Complete | 2026-03-07 |
