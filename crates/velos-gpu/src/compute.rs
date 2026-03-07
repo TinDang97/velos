@@ -197,6 +197,20 @@ impl ComputeDispatcher {
         }
     }
 
+    /// Returns a reference to the agent buffer for use by other pipelines (e.g., perception).
+    ///
+    /// Returns `None` if no agent data has been uploaded yet.
+    pub fn agent_buffer(&self) -> Option<&wgpu::Buffer> {
+        self.agent_buffer.as_ref()
+    }
+
+    /// Returns a reference to the lane_agents buffer for use by other pipelines.
+    ///
+    /// Returns `None` if no lane data has been uploaded yet.
+    pub fn lane_agents_buffer(&self) -> Option<&wgpu::Buffer> {
+        self.lane_agents_buffer.as_ref()
+    }
+
     /// Upload agent states and lane sorting data to GPU for wave-front dispatch.
     pub fn upload_wave_front_data(
         &mut self,
