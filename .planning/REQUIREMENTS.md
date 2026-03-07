@@ -51,8 +51,8 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Application UI
 
-- [ ] **APP-01**: egui UI controls invoke simulation engine methods directly (start, stop, pause, speed adjustment, reset) via in-process function calls
-- [ ] **APP-02**: egui dashboard panels display simulation controls, real-time metrics, and agent statistics
+- [x] **APP-01**: egui UI controls invoke simulation engine methods directly (start, stop, pause, speed adjustment, reset) via in-process function calls
+- [x] **APP-02**: egui dashboard panels display simulation controls, real-time metrics, and agent statistics
 
 ### Metrics & Performance
 
@@ -149,7 +149,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | PERF-01 | Phase 1 | Complete |
 | PERF-02 | Phase 1 | Complete |
 | VEH-01 | Phase 2 | Complete |
-| VEH-02 | Phase 4 | Complete |
+| VEH-02 | Phase 2 + Phase 4 | Complete |
 | NET-01 | Phase 2 | Complete |
 | NET-02 | Phase 2 | Complete |
 | NET-03 | Phase 2 | Complete |
@@ -159,8 +159,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | DEM-02 | Phase 2 | Complete |
 | DEM-03 | Phase 2 | Complete |
 | GRID-01 | Phase 2 | Complete |
-| APP-01 | Phase 4 | Pending |
-| APP-02 | Phase 4 | Pending |
+| APP-01 | Phase 2 | Complete |
+| APP-02 | Phase 2 | Complete |
 | VEH-03 | Phase 3 | Complete |
 | VEH-04 | Phase 3 | Complete |
 
