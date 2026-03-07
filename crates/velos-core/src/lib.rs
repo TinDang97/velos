@@ -5,6 +5,7 @@ pub mod components;
 pub mod cost;
 pub mod error;
 pub mod fixed_point;
+pub mod reroute;
 
 pub use cfl::cfl_check;
 pub use components::{
@@ -18,3 +19,7 @@ pub use cost::{
 };
 pub use error::CoreError;
 pub use fixed_point::{FixLat, FixPos, FixSpd};
+pub use reroute::{
+    evaluate_reroute, PerceptionSnapshot, RerouteConfig, RerouteResult, RerouteScheduler,
+    RouteEvalContext,
+};
