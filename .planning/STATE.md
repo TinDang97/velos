@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: SUMO Replacement Engine
-status: completed
-stopped_at: Completed 06-06-PLAN.md
-last_updated: "2026-03-07T15:02:20.597Z"
-last_activity: 2026-03-07 -- Completed Plan 06-06 (Pedestrian adaptive GPU workgroups)
+status: in-progress
+stopped_at: Completed 07-02-PLAN.md
+last_updated: "2026-03-07T16:06:00Z"
+last_activity: 2026-03-07 -- Completed Plan 07-02 (Multi-factor cost function & agent profiles)
 progress:
   total_phases: 3
   completed_phases: 2
-  total_plans: 13
-  completed_plans: 13
-  percent: 85
+  total_plans: 17
+  completed_plans: 15
+  percent: 91
 ---
 
 # Project State
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-07)
 
 **Core value:** Motorbikes move realistically through traffic using continuous sublane positioning -- not forced into discrete lanes like Western traffic models
-**Current focus:** Phase 6 -- Agent Models & Signal Control
+**Current focus:** Phase 7 -- Intelligence, Routing & Prediction
 
 ## Current Position
 
-Phase: 6 of 7 (Agent Models & Signal Control) -- IN PROGRESS
-Plan: 07 complete -- Mesoscopic queue model
-Status: Plan 06-07 complete, phase 6 complete
-Last activity: 2026-03-07 -- Completed Plan 06-06 (Pedestrian adaptive GPU workgroups)
+Phase: 7 of 7 (Intelligence, Routing & Prediction) -- IN PROGRESS
+Plan: 02 of 04 complete -- Multi-factor cost function & agent profiles
+Status: Plan 07-02 complete
+Last activity: 2026-03-07 -- Completed Plan 07-02 (Multi-factor cost function & agent profiles)
 
-Progress: [█████████░] 85%
+Progress: [█████████░] 91%
 
 ## Accumulated Context
 
@@ -88,6 +88,10 @@ Recent decisions affecting current work:
 - [06-06]: bgl_entry made pub(crate) for cross-module pipeline sharing
 - [Phase 06]: [06-06]: Separate PedestrianAdaptivePipeline module for file size compliance
 - [Phase 06]: [06-06]: Hillis-Steele reduce-then-scan for portable multi-workgroup prefix sum
+- [07-01]: Undirected adjacency view of directed graph for CCH ordering and contraction
+- [07-01]: BFS balanced bisection with peripheral node start (reuses Phase 5 METIS fallback pattern)
+- [07-01]: CSR format with separate forward/backward stars indexed by rank for CCH
+- [07-01]: Cache invalidation based on node_count + edge_count comparison
 
 ### Pending Todos
 
@@ -96,12 +100,12 @@ None.
 ### Blockers/Concerns
 
 - ~~cf_model differentiation gap~~ RESOLVED in 05-06: CarFollowingModel now attached at spawn; GPU shader confirmed producing 92.8% speed difference between Krauss and IDM agents.
-- No Rust CCH crate exists -- Phase 7 requires custom implementation (2-3 weeks estimated)
+- ~~No Rust CCH crate exists~~ RESOLVED in 07-01: Custom CCH implementation with nested dissection ordering and node contraction
 - Meso-micro hybrid (AGT-05/AGT-06) may be unnecessary if full-micro handles 280K within 15ms frame time
 - Multi-GPU boundary protocol validated with logical partitions; physical multi-adapter untested (wgpu Spike S2 still needed)
 
 ## Session Continuity
 
-Last session: 2026-03-07T14:56:59.122Z
-Stopped at: Completed 06-06-PLAN.md
-Resume file: None
+Last session: 2026-03-07T16:05:09Z
+Stopped at: Completed 07-01-PLAN.md
+Resume file: .planning/phases/07-intelligence-routing-prediction/07-02-PLAN.md

@@ -52,7 +52,7 @@ Prove VELOS can replace SUMO: reimplement all core SUMO features, add agent inte
 
 ### Routing & Prediction
 
-- [ ] **RTE-01**: CCH (Customizable Contraction Hierarchies) replaces A* for pathfinding on 25K-edge network
+- [x] **RTE-01**: CCH (Customizable Contraction Hierarchies) replaces A* for pathfinding on 25K-edge network
 - [ ] **RTE-02**: CCH supports 3ms dynamic weight customization without full re-contraction
 - [ ] **RTE-03**: Dynamic agent rerouting at 500 reroutes/step using CCH queries (0.02ms/query)
 - [ ] **RTE-04**: BPR + ETS + historical prediction ensemble runs in-process every 60 sim-seconds
@@ -156,7 +156,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | INT-03 | Phase 7 | Pending |
 | INT-04 | Phase 7 | Pending |
 | INT-05 | Phase 7 | Pending |
-| RTE-01 | Phase 7 | Pending |
+| RTE-01 | Phase 7 | Complete |
 | RTE-02 | Phase 7 | Pending |
 | RTE-03 | Phase 7 | Pending |
 | RTE-04 | Phase 7 | Pending |
