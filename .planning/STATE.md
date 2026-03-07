@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: SUMO Replacement Engine
 status: in-progress
-stopped_at: Completed 06-01-PLAN.md
-last_updated: "2026-03-07T14:27:00.000Z"
-last_activity: 2026-03-07 -- Completed Plan 06-01 (Buffer layout and vehicle types)
+stopped_at: Completed 06-04-PLAN.md
+last_updated: "2026-03-07T14:36:52.000Z"
+last_activity: 2026-03-07 -- Completed Plan 06-04 (Emergency vehicle priority)
 progress:
   total_phases: 3
   completed_phases: 1
   total_plans: 7
-  completed_plans: 7
-  percent: 38
+  completed_plans: 8
+  percent: 43
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-03-07)
 ## Current Position
 
 Phase: 6 of 7 (Agent Models & Signal Control) -- IN PROGRESS
-Plan: 01 complete -- Buffer layout and vehicle types
-Status: Plan 06-01 complete, ready for Plan 06-02
-Last activity: 2026-03-07 -- Completed Plan 06-01 (Buffer layout and vehicle types)
+Plan: 04 complete -- Emergency vehicle priority
+Status: Plan 06-04 complete, ready for Plan 06-05
+Last activity: 2026-03-07 -- Completed Plan 06-04 (Emergency vehicle priority)
 
-Progress: [████------] 38%
+Progress: [████░-----] 43%
 
 ## Accumulated Context
 
@@ -64,6 +64,13 @@ Recent decisions affecting current work:
 - [06-01]: VehicleType extended to 7 variants: Motorbike, Car, Bus, Bicycle, Truck, Emergency, Pedestrian
 - [06-01]: Bicycle uses sublane model (like Motorbike); Bus/Truck/Emergency use lane-based (like Car)
 - [06-01]: VehicleType enum order = GPU u32 mapping (0=Motorbike..6=Pedestrian)
+- [06-03]: SignalController trait takes &[DetectorReading] in tick() -- fixed-time ignores, actuated consumes
+- [06-03]: ActuatedController uses explicit amber state machine for precise gap-out control
+- [06-03]: AdaptiveController redistributes green only at cycle boundaries, not mid-cycle
+- [06-03]: LoopDetector uses strict prev < offset <= cur for forward-only crossing detection
+- [06-04]: Emergency yield cone: 50m range, 90-degree cone (45-degree half-angle) for siren detection
+- [06-04]: emergency_count replaces _pad in WaveFrontParams -- GPU shader early-exits when 0
+- [06-04]: EmergencyVehicle buffer at binding 5, max 16 entries, pre-allocated
 
 ### Pending Todos
 
@@ -78,6 +85,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-07T14:27:00.000Z
-Stopped at: Completed 06-01-PLAN.md
-Resume file: .planning/phases/06-agent-models-signal-control/06-01-SUMMARY.md
+Last session: 2026-03-07T14:36:52.000Z
+Stopped at: Completed 06-04-PLAN.md
+Resume file: .planning/phases/06-agent-models-signal-control/06-04-SUMMARY.md

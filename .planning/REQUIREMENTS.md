@@ -40,7 +40,7 @@ Prove VELOS can replace SUMO: reimplement all core SUMO features, add agent inte
 - [ ] **AGT-05**: Meso-micro hybrid with 100m graduated buffer zone and velocity-matching insertion
 - [ ] **AGT-06**: Mesoscopic queue model (O(1) per edge) for peripheral network zones
 - [x] **AGT-07**: Truck agent type with distinct dynamics (12m length, 1.0 m/s2 accel, 90 km/h max)
-- [ ] **AGT-08**: Emergency vehicle with priority behavior and yield-to-emergency from other agents
+- [x] **AGT-08**: Emergency vehicle with priority behavior and yield-to-emergency from other agents
 
 ### Agent Intelligence
 
@@ -145,7 +145,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | AGT-05 | Phase 6 | Pending |
 | AGT-06 | Phase 6 | Pending |
 | AGT-07 | Phase 6 | Complete (06-01) |
-| AGT-08 | Phase 6 | Pending |
+| AGT-08 | Phase 6 | Complete |
 | SIG-01 | Phase 6 | Pending |
 | SIG-02 | Phase 6 | Pending |
 | SIG-03 | Phase 6 | Pending |
