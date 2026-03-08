@@ -364,4 +364,336 @@ impl SimWorld {
             meso_edge_id
         );
     }
+
+    /// Apply GLOSA advisory speed reduction to agents approaching non-green signals.
+    ///
+    /// For each signalized intersection, queries agents on incoming edges within
+    /// broadcast range (200m). If the signal is red/amber, computes the optimal
+    /// approach speed via `glosa_speed()`. Speeds below 3.0 m/s are ignored
+    /// (agent will stop and wait instead).
+    ///
+    /// Called between step_signal_priority (step 4) and step_perception (step 5)
+    /// in both tick_gpu() and tick() pipelines.
+    pub(crate) fn step_glosa(&mut self) {
+        use velos_signal::spat::{broadcast_range_m, glosa_speed};
+
+        let range = broadcast_range_m();
+        let g = self.road_graph.inner();
+
+        // Collect advisories to avoid borrow conflict with self.world
+        struct GlosaAdvisory {
+            entity: Entity,
+            speed: f64,
+        }
+        let mut advisories: Vec<GlosaAdvisory> = Vec::new();
+
+        for (node, ctrl) in &self.signal_controllers {
+            let node_id = node.index() as u32;
+            let incoming_edges = match self.signalized_nodes.get(&node_id) {
+                Some(edges) => edges,
+                None => continue,
+            };
+
+            let num_approaches = incoming_edges.len();
+            let spat = ctrl.spat_data(num_approaches);
+
+            for (approach_idx, edge_idx) in incoming_edges.iter().enumerate() {
+                let phase = spat
+                    .approach_states
+                    .get(approach_idx)
+                    .copied()
+                    .unwrap_or(PhaseState::Green);
+                if phase == PhaseState::Green {
+                    continue;
+                }
+
+                let edge_length = g
+                    .edge_weight(*edge_idx)
+                    .map(|e| e.length_m)
+                    .unwrap_or(100.0);
+
+                for (entity, rp, kin) in self
+                    .world
+                    .query::<(hecs::Entity, &RoadPosition, &Kinematics)>()
+                    .iter()
+                {
+                    if rp.edge_index != edge_idx.index() as u32 {
+                        continue;
+                    }
+                    let distance = edge_length - rp.offset_m;
+                    if distance <= 0.0 || distance > range {
+                        continue;
+                    }
+
+                    let v_max = kin.speed.max(13.89); // current or 50 km/h default
+                    let advisory = glosa_speed(distance, spat.time_to_next_change, v_max);
+                    if advisory >= 3.0 && advisory < kin.speed {
+                        advisories.push(GlosaAdvisory {
+                            entity,
+                            speed: advisory,
+                        });
+                    }
+                }
+            }
+        }
+
+        // Apply advisories
+        for adv in &advisories {
+            if let Ok(kin) = self.world.query_one_mut::<&mut Kinematics>(adv.entity) {
+                kin.speed = kin.speed.min(adv.speed);
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use petgraph::graph::DiGraph;
+    use velos_core::components::{
+        Kinematics, Position, RoadPosition, Route, VehicleType, WaitState,
+    };
+    use velos_net::graph::{RoadClass, RoadEdge, RoadGraph, RoadNode};
+    use velos_signal::plan::PhaseState;
+    use velos_signal::SignalController;
+    use velos_vehicle::idm::IdmParams;
+
+    /// A mock signal controller that returns a fixed phase state for all approaches.
+    struct MockSignalController {
+        phase: PhaseState,
+        time_to_green: f64,
+        cycle_time: f64,
+    }
+
+    impl MockSignalController {
+        fn red(time_to_green: f64) -> Self {
+            Self {
+                phase: PhaseState::Red,
+                time_to_green,
+                cycle_time: 60.0,
+            }
+        }
+
+        fn green() -> Self {
+            Self {
+                phase: PhaseState::Green,
+                time_to_green: 0.0,
+                cycle_time: 60.0,
+            }
+        }
+    }
+
+    impl SignalController for MockSignalController {
+        fn tick(&mut self, _dt: f64, _detector_readings: &[velos_signal::detector::DetectorReading]) {}
+
+        fn get_phase_state(&self, _approach_index: usize) -> PhaseState {
+            self.phase
+        }
+
+        fn reset(&mut self) {}
+
+        fn spat_data(&self, num_approaches: usize) -> velos_signal::spat::SpatBroadcast {
+            velos_signal::spat::SpatBroadcast {
+                approach_states: vec![self.phase; num_approaches],
+                time_to_next_change: self.time_to_green,
+                cycle_time: self.cycle_time,
+            }
+        }
+    }
+
+    /// Build a graph: A --edge0--> B --edge1--> C <--edge2-- D <--edge3-- E
+    /// plus F-->C, G-->C to give node C 4 incoming edges (signalized).
+    fn make_glosa_test_graph() -> (RoadGraph, NodeIndex, Vec<EdgeIndex>) {
+        let mut g = DiGraph::new();
+        let a = g.add_node(RoadNode { pos: [0.0, 0.0] });
+        let b = g.add_node(RoadNode { pos: [300.0, 0.0] });
+        let c = g.add_node(RoadNode { pos: [600.0, 0.0] }); // signalized intersection
+        let d = g.add_node(RoadNode { pos: [600.0, 300.0] });
+        let e = g.add_node(RoadNode { pos: [600.0, 600.0] });
+        let f = g.add_node(RoadNode { pos: [900.0, 0.0] });
+        let gg = g.add_node(RoadNode { pos: [300.0, 300.0] });
+
+        let make_edge = |len: f64| RoadEdge {
+            length_m: len,
+            speed_limit_mps: 13.9,
+            lane_count: 2,
+            oneway: true,
+            road_class: RoadClass::Primary,
+            geometry: vec![[0.0, 0.0], [len, 0.0]],
+            motorbike_only: false,
+            time_windows: None,
+        };
+
+        let _e0 = g.add_edge(a, b, make_edge(300.0));
+        let e1 = g.add_edge(b, c, make_edge(300.0)); // incoming to C
+        let e2 = g.add_edge(d, c, make_edge(300.0)); // incoming to C
+        let e3 = g.add_edge(e, d, make_edge(300.0));
+        let e4 = g.add_edge(f, c, make_edge(300.0)); // incoming to C
+        let e5 = g.add_edge(gg, c, make_edge(300.0)); // incoming to C (4th)
+
+        let _ = e3; // suppress unused
+
+        let incoming = vec![e1, e2, e4, e5];
+        let road_graph = RoadGraph::new(g);
+        (road_graph, c, incoming)
+    }
+
+    fn spawn_test_agent(
+        sim: &mut SimWorld,
+        edge_index: u32,
+        offset_m: f64,
+        speed: f64,
+    ) -> Entity {
+        sim.world.spawn((
+            Position { x: 0.0, y: 0.0 },
+            Kinematics {
+                vx: speed,
+                vy: 0.0,
+                speed,
+                heading: 0.0,
+            },
+            VehicleType::Car,
+            RoadPosition {
+                edge_index,
+                lane: 0,
+                offset_m,
+            },
+            Route {
+                path: vec![0, 1],
+                current_step: 0,
+            },
+            WaitState {
+                stopped_since: -1.0,
+                at_red_signal: false,
+            },
+            IdmParams {
+                v0: 13.89,
+                s0: 2.0,
+                t_headway: 1.5,
+                a: 1.0,
+                b: 2.0,
+                delta: 4.0,
+            },
+        ))
+    }
+
+    #[test]
+    fn step_glosa_reduces_speed_for_agent_near_red_signal() {
+        let (graph, signal_node, incoming) = make_glosa_test_graph();
+        let mut sim = SimWorld::new_cpu_only(graph);
+
+        // Replace signal controllers with our mock red controller
+        let signalized_edges: Vec<EdgeIndex> = incoming.clone();
+        sim.signal_controllers = vec![(
+            signal_node,
+            Box::new(MockSignalController::red(10.0)), // 10s to green
+        )];
+        sim.signalized_nodes
+            .insert(signal_node.index() as u32, signalized_edges);
+
+        // Place agent 150m from signal on the first incoming edge
+        let edge_idx = incoming[0].index() as u32;
+        let agent = spawn_test_agent(&mut sim, edge_idx, 150.0, 13.89); // 150m offset on 300m edge = 150m from signal
+
+        sim.step_glosa();
+
+        let kin = sim.world.query_one_mut::<&Kinematics>(agent).unwrap();
+        // glosa_speed(150.0, 10.0, 13.89) = 150/10 = 15.0 > 13.89 => 0.0 (cannot make it)
+        // Actually 15.0 > 13.89 so returns 0.0, agent won't be affected (advisory < 3.0)
+        // Let me adjust: agent at offset 200 => distance = 100m, advisory = 100/10 = 10.0
+        // That's < 13.89 and >= 3.0, so should reduce speed
+        assert!((kin.speed - 13.89).abs() < 0.01, "Agent at 150m offset: advisory 15 m/s > v_max, no change");
+
+        // Now test with adjusted position: 200m offset => 100m from signal
+        let agent2 = spawn_test_agent(&mut sim, edge_idx, 200.0, 13.89);
+        sim.step_glosa();
+        let kin2 = sim.world.query_one_mut::<&Kinematics>(agent2).unwrap();
+        // glosa_speed(100.0, 10.0, 13.89) = 10.0 m/s, which is < 13.89 and >= 3.0
+        assert!(
+            (kin2.speed - 10.0).abs() < 0.01,
+            "Agent at 200m offset (100m from signal): speed should be reduced to 10.0, got {}",
+            kin2.speed
+        );
+    }
+
+    #[test]
+    fn step_glosa_no_change_at_green_signal() {
+        let (graph, signal_node, incoming) = make_glosa_test_graph();
+        let mut sim = SimWorld::new_cpu_only(graph);
+
+        let signalized_edges: Vec<EdgeIndex> = incoming.clone();
+        sim.signal_controllers = vec![(
+            signal_node,
+            Box::new(MockSignalController::green()),
+        )];
+        sim.signalized_nodes
+            .insert(signal_node.index() as u32, signalized_edges);
+
+        let edge_idx = incoming[0].index() as u32;
+        let agent = spawn_test_agent(&mut sim, edge_idx, 200.0, 13.89);
+
+        sim.step_glosa();
+
+        let kin = sim.world.query_one_mut::<&Kinematics>(agent).unwrap();
+        assert!(
+            (kin.speed - 13.89).abs() < 0.01,
+            "Green signal: speed should not change, got {}",
+            kin.speed
+        );
+    }
+
+    #[test]
+    fn step_glosa_no_change_beyond_broadcast_range() {
+        let (graph, signal_node, incoming) = make_glosa_test_graph();
+        let mut sim = SimWorld::new_cpu_only(graph);
+
+        let signalized_edges: Vec<EdgeIndex> = incoming.clone();
+        sim.signal_controllers = vec![(
+            signal_node,
+            Box::new(MockSignalController::red(10.0)),
+        )];
+        sim.signalized_nodes
+            .insert(signal_node.index() as u32, signalized_edges);
+
+        // Agent at offset 50 on a 300m edge => distance = 250m > 200m broadcast range
+        let edge_idx = incoming[0].index() as u32;
+        let agent = spawn_test_agent(&mut sim, edge_idx, 50.0, 13.89);
+
+        sim.step_glosa();
+
+        let kin = sim.world.query_one_mut::<&Kinematics>(agent).unwrap();
+        assert!(
+            (kin.speed - 13.89).abs() < 0.01,
+            "Beyond 200m range: speed should not change, got {}",
+            kin.speed
+        );
+    }
+
+    #[test]
+    fn step_glosa_below_minimum_speed_ignored() {
+        let (graph, signal_node, incoming) = make_glosa_test_graph();
+        let mut sim = SimWorld::new_cpu_only(graph);
+
+        let signalized_edges: Vec<EdgeIndex> = incoming.clone();
+        // time_to_green = 100s, so at 100m distance: advisory = 100/100 = 1.0 m/s < 3.0 threshold
+        sim.signal_controllers = vec![(
+            signal_node,
+            Box::new(MockSignalController::red(100.0)),
+        )];
+        sim.signalized_nodes
+            .insert(signal_node.index() as u32, signalized_edges);
+
+        let edge_idx = incoming[0].index() as u32;
+        let agent = spawn_test_agent(&mut sim, edge_idx, 200.0, 13.89); // 100m from signal
+
+        sim.step_glosa();
+
+        let kin = sim.world.query_one_mut::<&Kinematics>(agent).unwrap();
+        // glosa_speed(100.0, 100.0, 13.89) = 1.0 m/s < 3.0, returns 0.0 => no advisory applied
+        assert!(
+            (kin.speed - 13.89).abs() < 0.01,
+            "Advisory below 3.0 m/s should be ignored, got {}",
+            kin.speed
+        );
+    }
 }

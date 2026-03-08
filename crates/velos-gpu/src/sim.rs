@@ -370,6 +370,7 @@ impl SimWorld {
     /// 2. update_loop_detectors — feed actuated signals
     /// 3. step_signals_with_detectors — advance signal controllers
     /// 4. step_signal_priority — process bus/emergency priority requests
+    /// 4.5. step_glosa        — GLOSA advisory speed for non-green signals
     /// 5. step_perception     — GPU perception gather + readback
     /// 6. step_reroute        — evaluate rerouting from perception results
     /// 6.5. step_meso         — mesoscopic queue tick + buffer zone insertion
@@ -408,6 +409,9 @@ impl SimWorld {
 
         // 4. Process signal priority requests from buses/emergencies
         self.step_signal_priority();
+
+        // 4.5. GLOSA advisory speed reduction for agents near non-green signals
+        self.step_glosa();
 
         // 5. GPU perception dispatch + readback
         let perception_results = self.step_perception(device, queue, dispatcher);
@@ -475,6 +479,9 @@ impl SimWorld {
         let detector_readings = self.update_loop_detectors();
         self.step_signals_with_detectors(dt, &detector_readings);
         self.step_signal_priority();
+
+        // 4.5. GLOSA advisory speed reduction for agents near non-green signals
+        self.step_glosa();
 
         // No perception/reroute in CPU path (requires GPU device)
 
