@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: SUMO Replacement Engine
 status: completed
-stopped_at: Completed 15-02-PLAN.md
-last_updated: "2026-03-08T15:39:53Z"
-last_activity: 2026-03-08 -- Completed Plan 15-02 (Fix stale tracking docs)
+stopped_at: Completed 15-03-PLAN.md -- v1.1 milestone shipped
+last_updated: "2026-03-08T16:04:40.118Z"
+last_activity: "2026-03-08 -- Completed Plan 15-03 (gap closure: Phase 15 self-tracking)"
 progress:
   total_phases: 11
-  completed_phases: 10
-  total_plans: 36
-  completed_plans: 36
+  completed_phases: 11
+  total_plans: 39
+  completed_plans: 39
   percent: 100
 ---
 
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-07)
 
 **Core value:** Motorbikes move realistically through traffic using continuous sublane positioning -- not forced into discrete lanes like Western traffic models
-**Current focus:** Phase 15 -- File Size Reduction & Housekeeping
+**Current focus:** v1.1 milestone shipped -- all 15 phases complete
 
 ## Current Position
 
 Phase: 15 of 15 (File Size Reduction & Housekeeping)
-Plan: 02 of 02 complete -- all plans complete
-Status: Phase 15 complete
-Last activity: 2026-03-08 -- Completed Plan 15-01 (sim.rs/compute.rs file size reduction)
+Plan: 03 of 03 complete -- all plans complete
+Status: Phase 15 complete -- v1.1 milestone shipped
+Last activity: 2026-03-08 -- Completed Plan 15-03 (gap closure: Phase 15 self-tracking)
 
 Progress: [██████████] 100%
 
@@ -164,6 +164,7 @@ Recent decisions affecting current work:
 - [14-01]: velos-net depends on velos-demand and velos-vehicle for snap_gtfs_stops high-level function
 - [14-02]: Name-based stop_id_to_index mapping -- BusStop.name preserved from GtfsStop.name by snap_gtfs_stops
 - [14-02]: GTFS loading after init_reroute() in SimWorld::new() -- ensures CCH available for future inter-stop routing
+- [Phase 15]: v1.1 milestone marked Shipped since all 15 phases verified complete
 
 ### Pending Todos
 
@@ -184,6 +185,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-08T15:49:00Z
-Stopped at: Completed 15-01-PLAN.md
-Resume file: .planning/phases/15-file-size-reduction-housekeeping/15-01-SUMMARY.md
+Last session: 2026-03-08T16:05:00Z
+Stopped at: Completed 15-03-PLAN.md -- v1.1 milestone shipped
+Resume file: .planning/phases/15-file-size-reduction-housekeeping/15-03-SUMMARY.md
