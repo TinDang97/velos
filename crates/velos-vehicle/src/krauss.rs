@@ -26,16 +26,17 @@ pub struct KraussParams {
 }
 
 impl KraussParams {
-    /// SUMO default passenger car Krauss parameters.
+    /// HCMC-calibrated car Krauss parameters (35 km/h urban).
+    ///
+    /// Replaces the old SUMO default (50 km/h) with HCMC congested urban values.
     pub fn sumo_default() -> Self {
-        Self {
-            accel: 2.6,
-            decel: 4.5,
-            sigma: 0.5,
-            tau: 1.0,
-            max_speed: 13.89, // 50 km/h
-            min_gap: 2.5,
-        }
+        use crate::config::VehicleConfig;
+        VehicleConfig::default().car.to_krauss_params()
+    }
+
+    /// Create Krauss parameters from a vehicle type config section.
+    pub fn from_config(params: &crate::config::VehicleTypeParams) -> Self {
+        params.to_krauss_params()
     }
 }
 

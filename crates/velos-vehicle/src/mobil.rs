@@ -20,6 +20,13 @@ pub struct MobilParams {
     pub right_bias: f64,
 }
 
+impl MobilParams {
+    /// Create MOBIL parameters from a vehicle type config section.
+    pub fn from_config(params: &crate::config::VehicleTypeParams) -> Self {
+        params.to_mobil_params()
+    }
+}
+
 /// Context for evaluating a single lane-change decision.
 ///
 /// All acceleration values come from IDM evaluations in current vs target lane.

@@ -1,5 +1,6 @@
 //! Vehicle type definitions and default parameter sets.
 
+use crate::config::VehicleConfig;
 use crate::idm::IdmParams;
 use crate::mobil::MobilParams;
 
@@ -27,76 +28,61 @@ pub enum VehicleType {
 
 /// Return the default IDM parameters for a given vehicle type.
 ///
-/// Values sourced from architecture doc `02-agent-models.md` and IDM literature.
+/// Values are HCMC-calibrated defaults matching `VehicleConfig::default()`.
+/// For config-driven loading, use [`default_idm_params_from_config`] instead.
 pub fn default_idm_params(vehicle_type: VehicleType) -> IdmParams {
+    let config = VehicleConfig::default();
+    default_idm_params_from_config(vehicle_type, &config)
+}
+
+/// Return IDM parameters for a vehicle type from a loaded config.
+pub fn default_idm_params_from_config(vehicle_type: VehicleType, config: &VehicleConfig) -> IdmParams {
     match vehicle_type {
-        VehicleType::Car => IdmParams {
-            v0: 13.9,       // 50 km/h desired speed
-            s0: 2.0,        // 2m minimum gap
-            t_headway: 1.5, // 1.5s time headway
-            a: 1.0,         // 1.0 m/s^2 max accel
-            b: 2.0,         // 2.0 m/s^2 comfortable decel
-            delta: 4.0,     // acceleration exponent
-        },
-        VehicleType::Motorbike => IdmParams {
-            v0: 11.1,       // 40 km/h desired speed
-            s0: 1.0,        // 1m minimum gap (smaller vehicle)
-            t_headway: 1.0, // 1.0s time headway (more aggressive)
-            a: 2.0,         // 2.0 m/s^2 max accel (lighter)
-            b: 3.0,         // 3.0 m/s^2 comfortable decel
-            delta: 4.0,
-        },
-        VehicleType::Bus => IdmParams {
-            v0: 11.1,       // 40 km/h desired speed (urban bus)
-            s0: 3.0,        // 3m minimum gap (longer vehicle)
-            t_headway: 1.5, // 1.5s time headway (cautious)
-            a: 1.0,         // 1.0 m/s^2 max accel (heavy)
-            b: 2.5,         // 2.5 m/s^2 comfortable decel
-            delta: 4.0,
-        },
-        VehicleType::Bicycle => IdmParams {
-            v0: 4.17,       // 15 km/h desired speed
-            s0: 1.5,        // 1.5m minimum gap
-            t_headway: 1.0, // 1.0s time headway
-            a: 1.0,         // 1.0 m/s^2 max accel
-            b: 3.0,         // 3.0 m/s^2 comfortable decel
-            delta: 4.0,
-        },
-        VehicleType::Truck => IdmParams {
-            v0: 25.0,       // 90 km/h desired speed
-            s0: 4.0,        // 4m minimum gap (long vehicle)
-            t_headway: 2.0, // 2.0s time headway (heavy, slow reaction)
-            a: 1.0,         // 1.0 m/s^2 max accel (heavy)
-            b: 2.5,         // 2.5 m/s^2 comfortable decel
-            delta: 4.0,
-        },
-        VehicleType::Emergency => IdmParams {
-            v0: 16.7,       // 60 km/h desired speed (sirens on)
-            s0: 2.0,        // 2m minimum gap
-            t_headway: 1.2, // 1.2s time headway (trained driver)
-            a: 2.0,         // 2.0 m/s^2 max accel (powerful engine)
-            b: 3.5,         // 3.5 m/s^2 comfortable decel (heavy braking OK)
-            delta: 4.0,
-        },
-        VehicleType::Pedestrian => IdmParams {
-            v0: 1.4,        // 5 km/h walking speed
-            s0: 0.5,        // 0.5m personal space
-            t_headway: 0.5, // 0.5s reaction time
-            a: 0.5,         // 0.5 m/s^2 gentle accel
-            b: 1.0,         // 1.0 m/s^2 comfortable decel
-            delta: 4.0,
-        },
+        VehicleType::Pedestrian => {
+            // Pedestrian uses social force model primarily, but IDM is used for
+            // longitudinal following in some contexts.
+            IdmParams {
+                v0: 1.4,
+                s0: 0.5,
+                t_headway: 0.5,
+                a: 0.5,
+                b: 1.0,
+                delta: 4.0,
+            }
+        }
+        other => config.for_vehicle_type(other).to_idm_params(),
     }
 }
 
-/// Return the default MOBIL lane-change parameters for HCMC traffic.
+/// Return the default MOBIL lane-change parameters for HCMC traffic (car defaults).
 ///
-/// Politeness 0.3 = moderate altruism, typical for mixed Asian traffic.
+/// For per-vehicle-type MOBIL params, use [`default_mobil_params_for_type`].
 pub fn default_mobil_params() -> MobilParams {
-    MobilParams {
-        politeness: 0.3,
-        threshold: 0.2,     // m/s^2 minimum incentive
-        safe_decel: -4.0,   // m/s^2 safety limit for new follower
-        right_bias: 0.1,    // m/s^2 preference for right lane
+    let config = VehicleConfig::default();
+    config.car.to_mobil_params()
+}
+
+/// Return MOBIL parameters for a specific vehicle type from config.
+pub fn default_mobil_params_for_type(
+    vehicle_type: VehicleType,
+    config: &VehicleConfig,
+) -> MobilParams {
+    match vehicle_type {
+        VehicleType::Pedestrian => {
+            // Pedestrians don't lane-change, but provide sensible defaults
+            MobilParams {
+                politeness: 0.5,
+                threshold: 0.2,
+                safe_decel: -4.0,
+                right_bias: 0.0,
+            }
+        }
+        other => config.for_vehicle_type(other).to_mobil_params(),
     }
+}
+
+/// Return per-vehicle-type MOBIL params using built-in HCMC defaults.
+pub fn default_mobil_params_for_type_builtin(vehicle_type: VehicleType) -> MobilParams {
+    let config = VehicleConfig::default();
+    default_mobil_params_for_type(vehicle_type, &config)
 }

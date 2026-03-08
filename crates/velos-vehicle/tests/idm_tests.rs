@@ -89,7 +89,8 @@ fn stopping_guard_zero_initial_speed() {
 fn motorbike_params_differ_from_car() {
     let car = default_idm_params(VehicleType::Car);
     let moto = default_idm_params(VehicleType::Motorbike);
-    assert!(moto.v0 < car.v0, "motorbike desired speed should be lower");
+    // HCMC: motorbikes are FASTER than cars (11.1 vs 9.7 m/s) due to filtering
+    assert!(moto.v0 > car.v0, "motorbike desired speed should be higher in HCMC");
     assert!(moto.s0 < car.s0, "motorbike minimum gap should be smaller");
     assert!(moto.a > car.a, "motorbike max accel should be higher (lighter)");
 }

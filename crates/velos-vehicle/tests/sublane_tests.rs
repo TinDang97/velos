@@ -73,7 +73,7 @@ fn drift_clamps_to_max_lateral_speed_times_dt() {
     // Large desired offset change, but dt is small
     let dt = 0.1;
     let result = apply_lateral_drift(1.0, 5.0, params.max_lateral_speed, dt);
-    // Max displacement = 1.0 * 0.1 = 0.1m
+    // Max displacement = 1.2 * 0.1 = 0.12m (HCMC: max_lateral_speed=1.2)
     let expected = 1.0 + params.max_lateral_speed * dt;
     assert!(
         (result - expected).abs() < 1e-10,

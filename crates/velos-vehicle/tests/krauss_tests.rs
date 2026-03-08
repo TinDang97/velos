@@ -13,14 +13,15 @@ use velos_vehicle::krauss::{KraussParams, krauss_dawdle, krauss_safe_speed, krau
 // ---------------------------------------------------------------------------
 
 #[test]
-fn sumo_default_params() {
+fn sumo_default_params_hcmc_calibrated() {
     let p = KraussParams::sumo_default();
-    assert!((p.sigma - 0.5).abs() < f64::EPSILON);
-    assert!((p.accel - 2.6).abs() < f64::EPSILON);
-    assert!((p.decel - 4.5).abs() < f64::EPSILON);
-    assert!((p.tau - 1.0).abs() < f64::EPSILON);
-    assert!((p.max_speed - 13.89).abs() < f64::EPSILON);
-    assert!((p.min_gap - 2.5).abs() < f64::EPSILON);
+    // HCMC-calibrated car defaults (35 km/h urban, not 50 km/h)
+    assert!((p.sigma - 0.5).abs() < 0.01);
+    assert!((p.accel - 1.0).abs() < 0.01);
+    assert!((p.decel - 4.5).abs() < 0.01);
+    assert!((p.tau - 1.0).abs() < 0.01);
+    assert!((p.max_speed - 9.7).abs() < 0.01, "max_speed should be 9.7 (35 km/h), got {}", p.max_speed);
+    assert!((p.min_gap - 2.0).abs() < 0.01);
 }
 
 // ---------------------------------------------------------------------------

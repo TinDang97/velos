@@ -24,13 +24,25 @@ pub struct SublaneParams {
 }
 
 impl Default for SublaneParams {
+    /// HCMC-calibrated motorbike sublane defaults.
+    ///
+    /// min_filter_gap=0.5m (aggressive filtering), max_lateral_speed=1.2m/s.
     fn default() -> Self {
         Self {
-            min_filter_gap: 0.6,
-            max_lateral_speed: 1.0,
+            min_filter_gap: 0.5,
+            max_lateral_speed: 1.2,
             half_width: 0.25,
             swarm_lateral_speed: 0.8,
         }
+    }
+}
+
+impl SublaneParams {
+    /// Create sublane parameters from a vehicle type config section.
+    ///
+    /// Returns `None` if the config section has no sublane fields (lane-based vehicle).
+    pub fn from_config(params: &crate::config::VehicleTypeParams) -> Option<Self> {
+        params.to_sublane_params()
     }
 }
 
@@ -251,10 +263,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn default_params_match_context_md() {
+    fn default_params_match_hcmc_context() {
         let p = SublaneParams::default();
-        assert!((p.min_filter_gap - 0.6).abs() < 1e-10);
-        assert!((p.max_lateral_speed - 1.0).abs() < 1e-10);
+        // HCMC-calibrated: more aggressive filtering (0.5m), faster lateral (1.2 m/s)
+        assert!((p.min_filter_gap - 0.5).abs() < 1e-10);
+        assert!((p.max_lateral_speed - 1.2).abs() < 1e-10);
         assert!((p.half_width - 0.25).abs() < 1e-10);
         assert!((p.swarm_lateral_speed - 0.8).abs() < 1e-10);
     }
