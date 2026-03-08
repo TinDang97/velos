@@ -319,6 +319,99 @@ mod tests {
     use super::*;
 
     #[test]
+    fn step_prediction_skips_when_not_time() {
+        use petgraph::graph::DiGraph;
+        use velos_net::graph::{RoadClass, RoadEdge, RoadGraph, RoadNode};
+
+        let mut g = DiGraph::new();
+        let a = g.add_node(RoadNode { pos: [0.0, 0.0] });
+        let b = g.add_node(RoadNode { pos: [100.0, 0.0] });
+        g.add_edge(
+            a,
+            b,
+            RoadEdge {
+                length_m: 100.0,
+                speed_limit_mps: 13.9,
+                lane_count: 2,
+                oneway: true,
+                road_class: RoadClass::Primary,
+                geometry: vec![[0.0, 0.0], [100.0, 0.0]],
+                motorbike_only: false,
+                time_windows: None,
+            },
+        );
+        let graph = RoadGraph::new(g);
+        let mut sim = crate::sim::SimWorld::new_cpu_only(graph);
+
+        // Initialize prediction service manually
+        let edge_count = sim.road_graph.edge_count();
+        let free_flow = vec![7.2_f32; edge_count];
+        sim.reroute.prediction_service =
+            Some(PredictionService::new(edge_count, &free_flow));
+
+        // sim_time < 60s (default is morning rush ~ 25200s, but last_update starts at 0)
+        // PredictionService.last_update_sim_seconds starts at 0.0, sim_time starts at 25200.
+        // So should_update will be true. Let's test with a fresh service and sim_time = 10.
+        sim.sim_time = 10.0;
+        sim.reroute.prediction_service =
+            Some(PredictionService::new(edge_count, &free_flow));
+
+        // At sim_time=10, should_update should be false (10 - 0 < 60)
+        // Actually: 10.0 - 0.0 = 10.0 < 60.0, so should_update is false
+        // step_prediction should be a no-op
+        sim.step_prediction();
+        // No crash = success; overlay timestamp should still be 0
+        let overlay = sim.reroute.prediction_service.as_ref().unwrap().store().current();
+        assert!(
+            overlay.timestamp_sim_seconds < 1.0,
+            "overlay should not have been updated at t=10s"
+        );
+    }
+
+    #[test]
+    fn step_prediction_updates_when_time_elapsed() {
+        use petgraph::graph::DiGraph;
+        use velos_net::graph::{RoadClass, RoadEdge, RoadGraph, RoadNode};
+
+        let mut g = DiGraph::new();
+        let a = g.add_node(RoadNode { pos: [0.0, 0.0] });
+        let b = g.add_node(RoadNode { pos: [100.0, 0.0] });
+        g.add_edge(
+            a,
+            b,
+            RoadEdge {
+                length_m: 100.0,
+                speed_limit_mps: 13.9,
+                lane_count: 2,
+                oneway: true,
+                road_class: RoadClass::Primary,
+                geometry: vec![[0.0, 0.0], [100.0, 0.0]],
+                motorbike_only: false,
+                time_windows: None,
+            },
+        );
+        let graph = RoadGraph::new(g);
+        let mut sim = crate::sim::SimWorld::new_cpu_only(graph);
+
+        let edge_count = sim.road_graph.edge_count();
+        let free_flow = vec![7.2_f32; edge_count];
+        sim.reroute.prediction_service =
+            Some(PredictionService::new(edge_count, &free_flow));
+
+        // Set sim_time past 60s threshold
+        sim.sim_time = 65.0;
+
+        sim.step_prediction();
+
+        let overlay = sim.reroute.prediction_service.as_ref().unwrap().store().current();
+        assert!(
+            (overlay.timestamp_sim_seconds - 65.0).abs() < 0.1,
+            "overlay should have been updated at t=65s, got t={}",
+            overlay.timestamp_sim_seconds,
+        );
+    }
+
+    #[test]
     fn reroute_state_default_config() {
         let state = RerouteState::new();
         assert_eq!(state.scheduler.config().batch_size, 1000);
