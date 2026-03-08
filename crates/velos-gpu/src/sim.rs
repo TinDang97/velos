@@ -463,6 +463,7 @@ impl SimWorld {
     ///
     /// Same pipeline order as tick_gpu() but skips GPU perception and reroute
     /// (no GPU device available). Detector readings still feed signal controllers.
+    /// Includes step_lane_changes for MOBIL parity with GPU path (step 6.7).
     pub fn tick(
         &mut self,
         base_dt: f64,
@@ -487,6 +488,9 @@ impl SimWorld {
 
         // Meso queue tick + buffer zone insertion (BEFORE micro physics)
         self.step_meso(dt);
+
+        // 6.7. MOBIL lane-change evaluation (CPU parity with tick_gpu step 6.7)
+        self.step_lane_changes(dt);
 
         let snapshot = AgentSnapshot::collect(&self.world);
         let spatial = SpatialIndex::from_positions(&snapshot.ids, &snapshot.positions);
