@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: SUMO Replacement Engine
 status: in-progress
-stopped_at: Completed 09-02-PLAN.md
-last_updated: "2026-03-08T05:12:29Z"
-last_activity: 2026-03-08 -- Completed Plan 09-02 (GPU perception-driven HCMC behaviors)
+stopped_at: Completed 09-01-PLAN.md
+last_updated: "2026-03-08T05:16:00Z"
+last_activity: 2026-03-08 -- Completed Plan 09-01 (startup initialization wiring)
 progress:
   total_phases: 6
   completed_phases: 4
   total_plans: 25
-  completed_plans: 24
-  percent: 96
+  completed_plans: 25
+  percent: 100
 ---
 
 # Project State
@@ -26,9 +26,9 @@ See: .planning/PROJECT.md (updated 2026-03-07)
 ## Current Position
 
 Phase: 9 of 10 (Sim Loop Integration, Startup & Frame Pipeline)
-Plan: 02 of 03 complete -- GPU perception-driven HCMC behaviors
+Plan: 03 of 03 complete -- Plans 01 (startup init), 02 (HCMC behaviors) done; 03 (detector wiring) remaining
 Status: In progress
-Last activity: 2026-03-08 -- Completed Plan 09-02 (perception buffer + HCMC behavior functions)
+Last activity: 2026-03-08 -- Completed Plan 09-01 (startup initialization wiring)
 
 Progress: [████████░░] 80%
 
@@ -122,6 +122,11 @@ Recent decisions affecting current work:
 - [08-03]: Forced acceptance after 5s wait (threshold halved) prevents intersection deadlock
 - [Phase 08]: [08-02]: KRAUSS_TAU kept as WGSL const (1.0s) -- reaction time is physics, not vehicle-type-specific
 - [Phase 08]: [08-02]: 8 f32 per vehicle type in GPU uniform buffer: v0, s0, t_headway, a, b, krauss_accel, krauss_decel, krauss_sigma
+- [09-01]: Polymorphic signal controllers via Box<dyn SignalController> -- trait dispatch for fixed/actuated/adaptive
+- [09-01]: SimWorld::new() takes device/queue/dispatcher -- GPU init at construction, not deferred
+- [09-01]: SimWorld::new_cpu_only() for test paths without GPU device
+- [09-01]: Speed limit signs auto-generated from edge speed_limit_mps at startup
+- [09-01]: PerceptionPipeline 300K max agents (7% headroom over 280K target)
 - [09-02]: PerceptionResult WGSL field named perc_flags (not flags) to avoid collision with AgentState.flags
 - [09-02]: Placeholder perception_result_buffer pre-allocated 300K agents (9.6 MB zeroed) -- avoids Option complexity
 - [09-02]: Gap acceptance defaults VT_CAR for unknown leader type -- neutral size_factor, full type-aware logic on CPU
@@ -144,6 +149,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-08T05:12:29Z
-Stopped at: Completed 09-02-PLAN.md
+Last session: 2026-03-08T05:16:00Z
+Stopped at: Completed 09-01-PLAN.md (startup initialization)
 Resume file: .planning/phases/09-sim-loop-integration-startup-frame-pipeline/09-03-PLAN.md

@@ -62,16 +62,16 @@ Prove VELOS can replace SUMO: reimplement all core SUMO features, add agent inte
 
 ### Signal Control & V2I
 
-- [ ] **SIG-01**: Actuated signal control with loop detector-triggered phase transitions
-- [ ] **SIG-02**: Adaptive signal control with demand-responsive timing optimization
+- [x] **SIG-01**: Actuated signal control with loop detector-triggered phase transitions
+- [x] **SIG-02**: Adaptive signal control with demand-responsive timing optimization
 - [ ] **SIG-03**: SPaT (Signal Phase and Timing) broadcast to agents within range for signal-aware driving
 - [ ] **SIG-04**: Signal priority request from buses and emergency vehicles
-- [ ] **SIG-05**: Traffic sign interaction: speed limits, stop/yield, no-turn restrictions, school zones affect agent speed targets and cost function
+- [x] **SIG-05**: Traffic sign interaction: speed limits, stop/yield, no-turn restrictions, school zones affect agent speed targets and cost function
 
 ### HCMC Behavior Tuning
 
 - [x] **TUN-01**: All ~50 vehicle behavior parameters externalized to TOML config file (data/hcmc/vehicle_params.toml) with per-vehicle-type sections
-- [ ] **TUN-02**: GPU/CPU parameter parity -- GPU shader reads vehicle-type parameters from uniform buffer populated from config, eliminating hardcoded WGSL constants
+- [x] **TUN-02**: GPU/CPU parameter parity -- GPU shader reads vehicle-type parameters from uniform buffer populated from config, eliminating hardcoded WGSL constants
 - [x] **TUN-03**: HCMC-calibrated parameter defaults for all vehicle types (motorbike v0=35-45 km/h, car v0=30-40 km/h, truck v0=30-40 km/h not 90 km/h)
 - [x] **TUN-04**: Red-light creep behavior -- motorbikes inch past stop line during red, forming dense swarm ahead of cars
 - [x] **TUN-05**: Aggressive weaving -- speed-dependent lateral filter gap (0.5m base + 0.1*delta_v) for motorbike squeeze-through
@@ -155,11 +155,11 @@ Which phases cover which requirements. Updated during roadmap creation.
 | AGT-06 | Phase 10 | Pending |
 | AGT-07 | Phase 6 | Complete (06-01) |
 | AGT-08 | Phase 6 | Complete |
-| SIG-01 | Phase 9 | Pending |
-| SIG-02 | Phase 9 | Pending |
+| SIG-01 | Phase 9 | Complete |
+| SIG-02 | Phase 9 | Complete |
 | SIG-03 | Phase 9 | Pending |
 | SIG-04 | Phase 9 | Pending |
-| SIG-05 | Phase 9 | Pending |
+| SIG-05 | Phase 9 | Complete |
 | INT-01 | Phase 7 | Complete |
 | INT-02 | Phase 7 | Complete |
 | INT-03 | Phase 9 | Pending |
@@ -173,7 +173,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | RTE-06 | Phase 7 | Complete |
 | RTE-07 | Phase 9 | Pending |
 | TUN-01 | Phase 8 | Complete |
-| TUN-02 | Phase 9 | Pending |
+| TUN-02 | Phase 9 | Complete |
 | TUN-03 | Phase 8 | Complete |
 | TUN-04 | Phase 9 | Complete |
 | TUN-05 | Phase 8 | Complete |

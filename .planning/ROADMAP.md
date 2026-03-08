@@ -116,7 +116,7 @@ Plans:
   5. SignalController dispatch uses the trait polymorphically — actuated/adaptive controllers are instantiated based on intersection config, not hardcoded FixedTimeController
   6. sign_buffer is populated with sign data at startup via upload_signs() — handle_sign_interaction processes real sign data
   7. red_light_creep_speed() and intersection_gap_acceptance() are called from the GPU simulation path for motorbike agents
-**Plans:** 3 plans
+**Plans:** 2/3 plans executed
 Plans:
 - [ ] 09-01-PLAN.md — Startup initialization: vehicle config, polymorphic signals, sign upload, PerceptionPipeline
 - [ ] 09-02-PLAN.md — WGSL shader: perception_results binding + HCMC behaviors (red-light creep, gap acceptance)
@@ -149,5 +149,5 @@ Phases 5 through 8 execute sequentially. Each phase depends on the prior phase.
 | 6. Agent Models & Signal Control | v1.1 | 7/7 | Complete | 2026-03-07 |
 | 7. Intelligence, Routing & Prediction | v1.1 | 6/6 | Complete | 2026-03-07 |
 | 8. Tuning Vehicle Behavior (HCM) | v1.1 | 3/3 | Complete | 2026-03-08 |
-| 9. Sim Loop Integration — Startup & Frame Pipeline | v1.1 | 0/3 | In Progress | - |
+| 9. Sim Loop Integration — Startup & Frame Pipeline | 2/3 | In Progress|  | - |
 | 10. Sim Loop Integration — Bus Dwell & Meso-Micro | v1.1 | 0/0 | Planned | - |
