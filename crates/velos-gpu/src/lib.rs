@@ -5,6 +5,7 @@ pub mod app;
 pub mod buffers;
 pub mod camera;
 pub mod compute;
+mod compute_wave_front;
 pub mod device;
 pub mod ped_adaptive;
 pub mod perception;
