@@ -3,7 +3,7 @@
 ## Milestones
 
 - Shipped **v1.0 MVP** -- Phases 1-4 (shipped 2026-03-07)
-- Active **v1.1 SUMO Replacement Engine** -- Phases 5-12 (in progress)
+- Active **v1.1 SUMO Replacement Engine** -- Phases 5-13 (in progress)
 
 ## Phases
 
@@ -27,6 +27,7 @@
 - [x] **Phase 10: Sim Loop Integration — Bus Dwell & Meso-Micro Hybrid** - Wire bus dwell lifecycle and velos-meso crate into sim loop for peripheral zone transitions (completed 2026-03-08)
 - [x] **Phase 11: GPU Buffer Wiring — Perception & Emergency** - Wire perception result buffer to wave_front.wgsl binding(8) and emergency vehicle upload to sim loop tick (gap closure) (completed 2026-03-08)
 - [x] **Phase 12: CPU Lane-Change, Prediction Loop & GPU Config** - MOBIL overtaking, motorbike lateral filtering in GPU tick loop, prediction overlay refresh, HCMC creep/gap params to GPU (includes gap closure)
+- [ ] **Phase 13: Final Integration Wiring & GPU Transfer Audit** - Wire profile encoding at spawn (INT-02/INT-01), GLOSA consumption (SIG-03), GPU pedestrian dispatch (AGT-04), CPU tick parity, and eliminate wasteful per-frame GPU transfers
 
 ## Phase Details
 
@@ -173,6 +174,7 @@ Phases 5 through 8 execute sequentially. Each phase depends on the prior phase.
 | 10. Sim Loop Integration — Bus Dwell & Meso-Micro | 2/2 | Complete    | 2026-03-08 | - |
 | 11. GPU Buffer Wiring — Perception & Emergency | 2/2 | Complete    | 2026-03-08 | - |
 | 12. CPU Lane-Change, Prediction Loop & GPU Config | 2/2 | Complete    | 2026-03-08 | - |
+| 13. Final Integration Wiring & GPU Transfer Audit | v1.1 | 0/0 | Not Started | - |
 
 ### Phase 12: CPU Lane-Change, Prediction Loop & GPU Config
 **Goal**: MOBIL lane-change overtaking and motorbike lateral filtering wired into GPU tick loop, PredictionService::update() runs every 60 sim-seconds in the frame loop so prediction overlay refreshes live, and HCMC creep/gap behavior constants propagate from TOML config to GPU uniform buffer — closing the last 2 partial requirements and 2 integration gaps from the v1.1 audit
@@ -191,3 +193,18 @@ Phases 5 through 8 execute sequentially. Each phase depends on the prior phase.
 Plans:
 - [x] 12-01-PLAN.md — GPU uniform buffer extension (8->12 floats) + prediction loop wiring
 - [x] 12-02-PLAN.md — MOBIL lane-change + motorbike sublane wiring into tick_gpu()
+
+### Phase 13: Final Integration Wiring & GPU Transfer Audit
+**Goal**: Close all 4 remaining unsatisfied/partial requirements by wiring existing tested code into production paths, fix CPU tick parity, and eliminate wasteful per-frame GPU buffer transfers
+**Depends on**: Phase 12
+**Requirements**: INT-01, INT-02, SIG-03, AGT-04
+**Gap Closure:** Closes all gaps from v1.1 milestone audit (2026-03-08)
+**Success Criteria** (what must be TRUE):
+  1. spawn_single_agent() reads req.profile and calls encode_profile_in_flags() — agents spawn with correct profile bits (not all Commuter)
+  2. GLOSA advisory speed from SPaT broadcast is consumed by agent driving behavior — agents adjust speed near signalized intersections
+  3. PedestrianAdaptivePipeline GPU dispatch replaces CPU social force in sim loop — GPU path is active, not CPU fallback
+  4. step_lane_changes(dt) is called in CPU tick() path — CPU and GPU tick have parity
+  5. Signal buffer upload uses dirty flag — only transfers when signal phase changes (not every frame)
+  6. Edge travel ratio buffer skips upload when prediction overlay hasn't updated
+  7. Unused congestion grid buffer and GpuAgentState acceleration field are removed
+Plans:
