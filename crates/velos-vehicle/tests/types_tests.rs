@@ -71,11 +71,11 @@ fn idm_params_bicycle() {
 #[test]
 fn idm_params_truck() {
     let p = default_idm_params(VehicleType::Truck);
-    // HCMC: v0=9.7 (35 km/h), NOT 25.0 (90 km/h)
-    assert!((p.v0 - 9.7).abs() < 0.01, "Truck v0 should be 9.7 (35km/h), got {}", p.v0);
-    assert!((p.s0 - 4.0).abs() < 0.01, "Truck s0 should be 4.0, got {}", p.s0);
-    assert!((p.t_headway - 2.0).abs() < 0.01, "Truck t_headway should be 2.0, got {}", p.t_headway);
-    assert!((p.a - 1.0).abs() < 0.01, "Truck a should be 1.0, got {}", p.a);
+    // HCMC: v0=11.1 (40 km/h), matching motorbike speed for urban flow
+    assert!((p.v0 - 11.1).abs() < 0.01, "Truck v0 should be 11.1 (40km/h), got {}", p.v0);
+    assert!((p.s0 - 3.0).abs() < 0.01, "Truck s0 should be 3.0, got {}", p.s0);
+    assert!((p.t_headway - 1.5).abs() < 0.01, "Truck t_headway should be 1.5, got {}", p.t_headway);
+    assert!((p.a - 1.5).abs() < 0.01, "Truck a should be 1.5, got {}", p.a);
     assert!((p.b - 2.5).abs() < 0.01, "Truck b should be 2.5, got {}", p.b);
     assert!((p.delta - 4.0).abs() < 0.01);
 }

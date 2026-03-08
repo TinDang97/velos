@@ -169,42 +169,47 @@ fn spawner_vehicle_type_distribution() {
     let tod = TodProfile::new(vec![(0.0, 1.0), (24.0, 1.0)]);
     let mut spawner = Spawner::new(od, tod, 123);
 
-    // Generate many spawns across multiple hours to get statistical convergence
-    let mut motorbike_count = 0usize;
-    let mut car_count = 0usize;
+    // Generate many spawns across multiple hours to get statistical convergence.
+    // Group into 3 categories: two-wheeler (Motorbike+Bicycle ~79%),
+    // four-wheeler (Car+Bus+Truck+Emergency ~17.5%), pedestrian (~3.5%).
+    let mut two_wheeler_count = 0usize;
+    let mut four_wheeler_count = 0usize;
     let mut ped_count = 0usize;
 
     for hour in 0..20 {
         let spawns = spawner.generate_spawns(hour as f64, 3600.0);
         for s in &spawns {
             match s.vehicle_type {
-                SpawnVehicleType::Motorbike | SpawnVehicleType::Bicycle => motorbike_count += 1,
-                SpawnVehicleType::Car | SpawnVehicleType::Bus | SpawnVehicleType::Truck | SpawnVehicleType::Emergency => car_count += 1,
+                SpawnVehicleType::Motorbike | SpawnVehicleType::Bicycle => two_wheeler_count += 1,
+                SpawnVehicleType::Car | SpawnVehicleType::Bus | SpawnVehicleType::Truck | SpawnVehicleType::Emergency => four_wheeler_count += 1,
                 SpawnVehicleType::Pedestrian => ped_count += 1,
             }
         }
     }
 
-    let total = (motorbike_count + car_count + ped_count) as f64;
+    let total = (two_wheeler_count + four_wheeler_count + ped_count) as f64;
     assert!(total > 1000.0, "Need at least 1000 spawns, got {total}");
 
-    let moto_pct = motorbike_count as f64 / total;
-    let car_pct = car_count as f64 / total;
+    let two_w_pct = two_wheeler_count as f64 / total;
+    let four_w_pct = four_wheeler_count as f64 / total;
     let ped_pct = ped_count as f64 / total;
 
+    // Two-wheelers: Motorbike(76%) + Bicycle(3%) = 79%
     assert!(
-        (moto_pct - 0.80).abs() < 0.05,
-        "Motorbike should be ~80%, got {:.1}%",
-        moto_pct * 100.0
+        (two_w_pct - 0.79).abs() < 0.05,
+        "Two-wheelers should be ~79%, got {:.1}%",
+        two_w_pct * 100.0
     );
+    // Four-wheelers: Car(12%) + Bus(2%) + Truck(3%) + Emergency(0.5%) = 17.5%
     assert!(
-        (car_pct - 0.15).abs() < 0.05,
-        "Car should be ~15%, got {:.1}%",
-        car_pct * 100.0
+        (four_w_pct - 0.175).abs() < 0.05,
+        "Four-wheelers should be ~17.5%, got {:.1}%",
+        four_w_pct * 100.0
     );
+    // Pedestrians: 3.5%
     assert!(
-        (ped_pct - 0.05).abs() < 0.05,
-        "Pedestrian should be ~5%, got {:.1}%",
+        (ped_pct - 0.035).abs() < 0.03,
+        "Pedestrians should be ~3.5%, got {:.1}%",
         ped_pct * 100.0
     );
 }

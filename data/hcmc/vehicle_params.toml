@@ -40,7 +40,7 @@ b = 2.0
 delta = 4.0
 krauss_accel = 1.0
 krauss_decel = 4.5
-krauss_sigma = 0.5
+krauss_sigma = 0.1
 krauss_tau = 1.0
 krauss_max_speed = 9.7
 krauss_min_gap = 2.0
@@ -60,7 +60,7 @@ b = 2.5
 delta = 4.0
 krauss_accel = 1.0
 krauss_decel = 4.5
-krauss_sigma = 0.4
+krauss_sigma = 0.1
 krauss_tau = 1.0
 krauss_max_speed = 8.3
 krauss_min_gap = 3.0
@@ -71,24 +71,24 @@ right_bias = 0.1
 gap_acceptance_ttc = 1.8
 
 [truck]
-# 35 km/h desired speed (HCMC city center, NOT 90 km/h)
-v0 = 9.7
-s0 = 4.0
-t_headway = 2.0
-a = 1.0
+# 40 km/h desired speed (HCMC city center, NOT 90 km/h)
+v0 = 11.1
+s0 = 3.0
+t_headway = 1.5
+a = 1.5
 b = 2.5
 delta = 4.0
-krauss_accel = 1.0
+krauss_accel = 1.5
 krauss_decel = 4.5
-krauss_sigma = 0.4
+krauss_sigma = 0.3
 krauss_tau = 1.0
-krauss_max_speed = 9.7
-krauss_min_gap = 4.0
+krauss_max_speed = 11.1
+krauss_min_gap = 3.0
 politeness = 0.4
 threshold = 0.2
 safe_decel = -4.0
 right_bias = 0.1
-gap_acceptance_ttc = 2.0
+gap_acceptance_ttc = 1.5
 
 [bicycle]
 # 15 km/h desired speed

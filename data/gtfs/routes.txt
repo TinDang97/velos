@@ -1,0 +1,6 @@
+route_id,route_short_name,route_long_name,route_type
+R01,01,Ben Thanh - Cho Lon via Tran Hung Dao,3
+R02,02,Nguyen Hue - Binh Thanh via Hai Ba Trung,3
+R03,03,District 1 Circular - Le Loi - Dong Khoi,3
+R04,04,Pham Ngu Lao - District 5 via Nguyen Trai,3
+R05,05,Ben Thanh - Thu Thiem via Ham Nghi,3

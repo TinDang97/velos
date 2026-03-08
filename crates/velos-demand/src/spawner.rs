@@ -32,8 +32,21 @@ pub enum SpawnVehicleType {
     Pedestrian,
 }
 
-/// HCMC vehicle type weights: 80% motorbike, 15% car, 5% pedestrian.
-const VEHICLE_WEIGHTS: [f64; 3] = [0.80, 0.15, 0.05];
+/// HCMC vehicle type weights matching [`SpawnVehicleType`] variant order.
+///
+/// Mode shares calibrated for Ho Chi Minh City urban mixed traffic:
+/// - Motorbike dominates (~76%) per HCMC transport surveys
+/// - Bus weight is small here because [`BusSpawner`] handles GTFS-scheduled buses
+/// - Emergency vehicles are rare (~0.5%)
+const VEHICLE_WEIGHTS: [f64; 7] = [
+    0.76,  // Motorbike
+    0.12,  // Car
+    0.02,  // Bus (supplementary to GTFS-scheduled BusSpawner)
+    0.03,  // Bicycle
+    0.03,  // Truck
+    0.005, // Emergency
+    0.035, // Pedestrian
+];
 
 /// A request to spawn an agent at a specific origin heading to a destination.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -107,6 +120,10 @@ impl Spawner {
                 let vtype = match self.vehicle_dist.sample(&mut self.rng) {
                     0 => SpawnVehicleType::Motorbike,
                     1 => SpawnVehicleType::Car,
+                    2 => SpawnVehicleType::Bus,
+                    3 => SpawnVehicleType::Bicycle,
+                    4 => SpawnVehicleType::Truck,
+                    5 => SpawnVehicleType::Emergency,
                     _ => SpawnVehicleType::Pedestrian,
                 };
                 let profile = assign_profile(vtype, &self.profile_dist, &mut self.rng);
@@ -130,7 +147,49 @@ mod tests {
     #[test]
     fn vehicle_weights_sum_to_one() {
         let sum: f64 = VEHICLE_WEIGHTS.iter().sum();
-        assert!((sum - 1.0).abs() < f64::EPSILON);
+        assert!((sum - 1.0).abs() < 1e-10, "weights sum to {sum}, expected 1.0");
+    }
+
+    #[test]
+    fn vehicle_weights_cover_all_types() {
+        assert_eq!(
+            VEHICLE_WEIGHTS.len(),
+            7,
+            "VEHICLE_WEIGHTS must have one entry per SpawnVehicleType variant"
+        );
+        for (i, &w) in VEHICLE_WEIGHTS.iter().enumerate() {
+            assert!(w > 0.0, "weight index {i} must be positive");
+        }
+    }
+
+    #[test]
+    fn spawner_generates_all_seven_vehicle_types() {
+        use std::collections::HashSet;
+
+        let mut od = OdMatrix::new();
+        // High trip volume so each generate_spawns call produces many agents,
+        // ensuring rare types (Emergency 0.5%) appear within a few iterations.
+        od.set_trips(Zone::BenThanh, Zone::NguyenHue, 36_000);
+        let tod = TodProfile::new(vec![(0.0, 1.0), (24.0, 1.0)]);
+
+        let mut seen = HashSet::new();
+        for seed in 0..200 {
+            let mut s = Spawner::new(od.clone(), tod.clone(), seed);
+            for req in s.generate_spawns(12.0, 1.0) {
+                seen.insert(req.vehicle_type);
+            }
+            if seen.len() == 7 {
+                break;
+            }
+        }
+
+        assert!(seen.contains(&SpawnVehicleType::Motorbike), "missing Motorbike");
+        assert!(seen.contains(&SpawnVehicleType::Car), "missing Car");
+        assert!(seen.contains(&SpawnVehicleType::Bus), "missing Bus");
+        assert!(seen.contains(&SpawnVehicleType::Bicycle), "missing Bicycle");
+        assert!(seen.contains(&SpawnVehicleType::Truck), "missing Truck");
+        assert!(seen.contains(&SpawnVehicleType::Emergency), "missing Emergency");
+        assert!(seen.contains(&SpawnVehicleType::Pedestrian), "missing Pedestrian");
     }
 
     #[test]

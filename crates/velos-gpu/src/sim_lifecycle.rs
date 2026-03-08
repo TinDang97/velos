@@ -515,19 +515,32 @@ impl SimWorld {
     pub(crate) fn update_metrics(&mut self) {
         let mut motorbike_count = 0u32;
         let mut car_count = 0u32;
+        let mut bus_count = 0u32;
+        let mut bicycle_count = 0u32;
+        let mut truck_count = 0u32;
+        let mut emergency_count = 0u32;
         let mut ped_count = 0u32;
 
         for vtype in self.world.query_mut::<&VehicleType>().into_iter() {
             match *vtype {
-                VehicleType::Motorbike | VehicleType::Bicycle => motorbike_count += 1,
-                VehicleType::Car | VehicleType::Bus | VehicleType::Truck | VehicleType::Emergency => car_count += 1,
+                VehicleType::Motorbike => motorbike_count += 1,
+                VehicleType::Car => car_count += 1,
+                VehicleType::Bus => bus_count += 1,
+                VehicleType::Bicycle => bicycle_count += 1,
+                VehicleType::Truck => truck_count += 1,
+                VehicleType::Emergency => emergency_count += 1,
                 VehicleType::Pedestrian => ped_count += 1,
             }
         }
 
-        self.metrics.agent_count = motorbike_count + car_count + ped_count;
+        self.metrics.agent_count = motorbike_count + car_count + bus_count
+            + bicycle_count + truck_count + emergency_count + ped_count;
         self.metrics.motorbike_count = motorbike_count;
         self.metrics.car_count = car_count;
+        self.metrics.bus_count = bus_count;
+        self.metrics.bicycle_count = bicycle_count;
+        self.metrics.truck_count = truck_count;
+        self.metrics.emergency_count = emergency_count;
         self.metrics.ped_count = ped_count;
         self.metrics.sim_time = self.sim_time;
     }

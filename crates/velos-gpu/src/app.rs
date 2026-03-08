@@ -234,9 +234,32 @@ impl GpuState {
                     let secs = (m.sim_time % 60.0) as u32;
                     ui.label(format!("Time: {:02}:{:02}:{:02}", hours, mins, secs));
                     ui.label(format!("Agents: {}", m.agent_count));
-                    ui.label(format!("  Motorbikes: {}", m.motorbike_count));
-                    ui.label(format!("  Cars: {}", m.car_count));
-                    ui.label(format!("  Pedestrians: {}", m.ped_count));
+                    ui.separator();
+
+                    ui.heading("Vehicles");
+                    let legend: &[(&str, [u8; 3], u32)] = &[
+                        ("Motorbike",  [51, 204, 102],  m.motorbike_count),
+                        ("Car",        [51, 102, 230],  m.car_count),
+                        ("Bus",        [230, 230, 0],   m.bus_count),
+                        ("Bicycle",    [0, 230, 230],   m.bicycle_count),
+                        ("Truck",      [153, 102, 51],  m.truck_count),
+                        ("Emergency",  [255, 0, 0],     m.emergency_count),
+                        ("Pedestrian", [230, 230, 230], m.ped_count),
+                    ];
+                    for &(name, [r, g, b], count) in legend {
+                        ui.horizontal(|ui| {
+                            let (rect, _) = ui.allocate_exact_size(
+                                egui::vec2(12.0, 12.0),
+                                egui::Sense::hover(),
+                            );
+                            ui.painter().rect_filled(
+                                rect,
+                                2.0,
+                                egui::Color32::from_rgb(r, g, b),
+                            );
+                            ui.label(format!("{name}: {count}"));
+                        });
+                    }
                 });
         });
 

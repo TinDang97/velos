@@ -69,6 +69,10 @@ pub struct SimMetrics {
     pub agent_count: u32,
     pub motorbike_count: u32,
     pub car_count: u32,
+    pub bus_count: u32,
+    pub bicycle_count: u32,
+    pub truck_count: u32,
+    pub emergency_count: u32,
     pub ped_count: u32,
     pub sim_time: f64,
 }

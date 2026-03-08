@@ -59,7 +59,7 @@ fn gpu_vehicle_params_from_config_all_types_indexed_correctly() {
         9.7,   // 1: Car
         8.3,   // 2: Bus
         4.17,  // 3: Bicycle
-        9.7,   // 4: Truck
+        11.1,  // 4: Truck
         16.7,  // 5: Emergency
         1.2,   // 6: Pedestrian (desired_speed)
     ];

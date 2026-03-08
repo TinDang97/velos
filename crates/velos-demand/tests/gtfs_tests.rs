@@ -4,6 +4,7 @@ use std::path::Path;
 use velos_demand::gtfs::load_gtfs_csv;
 
 const FIXTURE_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../data/gtfs/test_fixture");
+const PROD_GTFS_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../data/gtfs");
 
 #[test]
 fn load_csv_parses_routes() {
@@ -67,4 +68,27 @@ fn load_csv_route2_has_correct_stops() {
 fn load_csv_missing_directory_returns_error() {
     let result = load_gtfs_csv(Path::new("/nonexistent/path"));
     assert!(result.is_err());
+}
+
+#[test]
+fn prod_gtfs_parses_5_routes_28_trips() {
+    let (routes, schedules) = load_gtfs_csv(Path::new(PROD_GTFS_DIR)).unwrap();
+    assert_eq!(routes.len(), 5, "expected 5 routes, got {}", routes.len());
+    assert_eq!(schedules.len(), 28, "expected 28 trips, got {}", schedules.len());
+
+    // All stops should have valid HCMC coordinates
+    for route in &routes {
+        for stop in &route.stops {
+            assert!(stop.lat > 10.7 && stop.lat < 10.9, "stop {} lat out of HCMC range", stop.stop_id);
+            assert!(stop.lon > 106.6 && stop.lon < 106.8, "stop {} lon out of HCMC range", stop.stop_id);
+        }
+    }
+
+    // All schedules should have ordered stop_times
+    for sched in &schedules {
+        let seqs: Vec<u32> = sched.stop_times.iter().map(|st| st.stop_sequence).collect();
+        let mut sorted = seqs.clone();
+        sorted.sort();
+        assert_eq!(seqs, sorted, "stop_times for {} not ordered", sched.trip_id);
+    }
 }

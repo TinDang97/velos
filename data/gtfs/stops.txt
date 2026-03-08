@@ -1,0 +1,25 @@
+stop_id,stop_name,stop_lat,stop_lon
+S01,Ben Thanh Market,10.7725,106.6980
+S02,Nguyen Hue Walking Street,10.7740,106.7025
+S03,Opera House,10.7765,106.7030
+S04,Dong Khoi - Le Loi,10.7755,106.7010
+S05,Pham Ngu Lao Backpacker,10.7685,106.6935
+S06,Tran Hung Dao - D1,10.7700,106.6900
+S07,Cho Lon Gateway,10.7560,106.6650
+S08,District 5 Terminal,10.7540,106.6600
+S09,Hai Ba Trung - D1,10.7780,106.6960
+S10,Vo Van Tan Junction,10.7810,106.6920
+S11,Binh Thanh Hub,10.8000,106.7050
+S12,Le Loi - Pasteur,10.7730,106.6970
+S13,Ham Nghi Financial,10.7710,106.7040
+S14,Ton Duc Thang Riverside,10.7690,106.7080
+S15,Thu Thiem Bridge,10.7700,106.7150
+S16,Nguyen Trai - D1,10.7660,106.6880
+S17,Le Thanh Ton,10.7750,106.7000
+S18,Ly Tu Trong,10.7770,106.6990
+S19,Nam Ky Khoi Nghia,10.7800,106.6945
+S20,Calmette Hospital,10.7715,106.6960
+S21,District 3 Border,10.7830,106.6910
+S22,Nguyen Dinh Chieu,10.7850,106.6940
+S23,Saigon Zoo Entrance,10.7880,106.7060
+S24,Ba Chieu Market,10.7950,106.7010

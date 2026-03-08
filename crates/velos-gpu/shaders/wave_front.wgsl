@@ -317,6 +317,10 @@ fn handle_sign_interaction(agent: ptr<function, AgentState>, desired_speed: f32)
         return desired_speed;
     }
 
+    // Emergency vehicles with active sirens ignore speed limit and school zone signs
+    let is_active_emergency = (*agent).vehicle_type == VT_EMERGENCY
+        && ((*agent).flags & FLAG_EMERGENCY_ACTIVE) != 0u;
+
     var speed = desired_speed;
     let agent_pos = fixpos_to_f32((*agent).position);
     let agent_edge = (*agent).edge_id;
@@ -335,14 +339,16 @@ fn handle_sign_interaction(agent: ptr<function, AgentState>, desired_speed: f32)
         switch sign.sign_type {
             case SIGN_SPEED_LIMIT: {
                 // Within 50m: clamp desired speed to posted limit
-                if distance <= SIGN_EFFECT_RANGE {
+                // Emergency vehicles with active sirens are exempt
+                if distance <= SIGN_EFFECT_RANGE && !is_active_emergency {
                     speed = min(speed, sign.value);
                 }
             }
             case SIGN_STOP: {
                 // Within 2m and still moving: set speed to 0
                 // CPU tracks gap acceptance timer for restart
-                if distance <= SIGN_STOP_RANGE {
+                // Emergency vehicles with active sirens run stop signs
+                if distance <= SIGN_STOP_RANGE && !is_active_emergency {
                     speed = 0.0;
                 }
             }
@@ -351,7 +357,8 @@ fn handle_sign_interaction(agent: ptr<function, AgentState>, desired_speed: f32)
                 // sim_time check: sign.value encodes the limit (5.56 m/s)
                 // Time-window enforcement is done on CPU; GPU always applies
                 // the reduced speed when the sign is present in the buffer
-                if distance <= SIGN_EFFECT_RANGE {
+                // Emergency vehicles exempt from school zone limits
+                if distance <= SIGN_EFFECT_RANGE && !is_active_emergency {
                     speed = min(speed, sign.value);
                 }
             }
