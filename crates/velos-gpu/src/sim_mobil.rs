@@ -282,7 +282,6 @@ impl SimWorld {
         }
 
         // Evaluate MOBIL and collect decisions
-        let sim_time = self.sim_time;
         let mut decisions: Vec<(Entity, u8, f64)> = Vec::new();
 
         for car in &cars {

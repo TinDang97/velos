@@ -357,17 +357,21 @@ impl SimWorld {
 
     /// Run one simulation tick using GPU wave-front dispatch for vehicle physics.
     ///
-    /// Full 10-step pipeline:
-    /// 1. spawn_agents       — generate new agents from OD matrix
-    /// 2. update_loop_detectors — check agents crossing virtual detectors
-    /// 3. step_signals        — advance signal controllers with detector readings
+    /// Full pipeline:
+    /// 1. spawn_agents       — create new agents from demand
+    /// 2. update_loop_detectors — feed actuated signals
+    /// 3. step_signals_with_detectors — advance signal controllers
     /// 4. step_signal_priority — process bus/emergency priority requests
     /// 5. step_perception     — GPU perception gather + readback
     /// 6. step_reroute        — evaluate rerouting from perception results
+    /// 6.5. step_meso         — mesoscopic queue tick + buffer zone insertion
+    /// 6.7. step_lane_changes — MOBIL evaluation + lateral drift (CPU, cars)
     /// 7. step_vehicles_gpu   — GPU wave-front car-following physics
-    /// 8. step_pedestrians    — CPU social force model
-    /// 9. detect_gridlock     — cycle detection in stopped agents
-    /// 10. remove + metrics   — cleanup finished agents, update counters
+    /// 7.5. step_motorbikes_sublane — lateral filtering (CPU, motorbikes)
+    /// 8. step_bus_dwell      — bus dwell lifecycle
+    /// 8.5. step_prediction   — prediction overlay refresh (every 60 sim-seconds)
+    /// 9. step_pedestrians    — CPU social force model
+    /// 10. detect_gridlock + remove + metrics
     pub fn tick_gpu(
         &mut self,
         base_dt: f64,
@@ -406,12 +410,33 @@ impl SimWorld {
         // 6.5. Meso queue tick + buffer zone insertion (BEFORE micro physics)
         self.step_meso(dt);
 
-        // 7-8. Vehicle and pedestrian physics
+        // 6.7. MOBIL lane-change evaluation + lateral drift (CPU, cars)
+        self.step_lane_changes(dt);
+
+        // 7. GPU wave-front car-following physics
         let snapshot = AgentSnapshot::collect(&self.world);
         let spatial = SpatialIndex::from_positions(&snapshot.ids, &snapshot.positions);
 
         self.step_vehicles_gpu(dt as f32, device, queue, dispatcher);
+
+        // 7.5. Motorbike sublane lateral filtering (CPU, uses updated positions)
+        let snapshot_post = AgentSnapshot::collect(&self.world);
+        let spatial_post =
+            SpatialIndex::from_positions(&snapshot_post.ids, &snapshot_post.positions);
+        crate::cpu_reference::step_motorbikes_sublane(
+            self,
+            dt,
+            &spatial_post,
+            &snapshot_post,
+        );
+
+        // 8. Bus dwell lifecycle
         self.step_bus_dwell(dt);
+
+        // 8.5. Prediction overlay refresh (every 60 sim-seconds)
+        self.step_prediction();
+
+        // 9. Pedestrians
         self.step_pedestrians(dt, &spatial, &snapshot);
 
         // 9-10. Gridlock detection, cleanup, metrics
@@ -454,6 +479,7 @@ impl SimWorld {
         crate::cpu_reference::step_vehicles(self, dt, &spatial, &snapshot);
         crate::cpu_reference::step_motorbikes_sublane(self, dt, &spatial, &snapshot);
         self.step_bus_dwell(dt);
+        self.step_prediction();
         self.step_pedestrians(dt, &spatial, &snapshot);
 
         self.detect_gridlock();

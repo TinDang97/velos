@@ -113,6 +113,81 @@ impl SimWorld {
         log::info!("Reroute subsystem initialized: {} edges", edge_count);
     }
 
+    /// Update prediction overlay if enough sim-time has elapsed.
+    ///
+    /// Gathers edge flow and capacity data from the road graph and current
+    /// agent positions, then calls PredictionService::update() which
+    /// atomically swaps the overlay for next-frame reroute reads.
+    pub(crate) fn step_prediction(&mut self) {
+        use petgraph::graph::EdgeIndex;
+        use petgraph::visit::EdgeRef;
+        use velos_core::components::{Kinematics, RoadPosition};
+        use velos_predict::PredictionInput;
+
+        let prediction_service = match &mut self.reroute.prediction_service {
+            Some(ps) => ps,
+            None => return,
+        };
+        if !prediction_service.should_update(self.sim_time) {
+            return;
+        }
+
+        let edge_count = self.road_graph.edge_count();
+        let mut flows = vec![0.0_f32; edge_count];
+        let mut capacities = vec![0.0_f32; edge_count];
+        let mut free_flow = vec![0.0_f32; edge_count];
+        let mut actual = vec![0.0_f32; edge_count];
+
+        // Populate from road graph edge weights
+        for edge_ref in self.road_graph.inner().edge_references() {
+            let idx = edge_ref.id().index();
+            if idx >= edge_count {
+                continue;
+            }
+            let ew = edge_ref.weight();
+            let speed_limit = ew.speed_limit_mps as f32;
+            let length = ew.length_m as f32;
+            capacities[idx] = (ew.lane_count as f32) * 40.0;
+            free_flow[idx] = if speed_limit > 0.0 {
+                length / speed_limit
+            } else {
+                length / 13.9
+            };
+            actual[idx] = free_flow[idx];
+        }
+
+        // Count agents per edge for flow and compute actual travel times
+        for (rp, kin) in self.world.query_mut::<(&RoadPosition, &Kinematics)>() {
+            let idx = rp.edge_index as usize;
+            if idx < edge_count {
+                flows[idx] += 1.0;
+                if kin.speed > 0.5 {
+                    let edge_len = self
+                        .road_graph
+                        .inner()
+                        .edge_weight(EdgeIndex::new(idx))
+                        .map(|e| e.length_m as f32)
+                        .unwrap_or(100.0);
+                    actual[idx] = edge_len / (kin.speed as f32);
+                }
+            }
+        }
+
+        let sim_hour = ((self.sim_time / 3600.0) as u8) % 24;
+        let day_type = 0_u8; // weekday default
+
+        let input = PredictionInput {
+            flows: &flows,
+            capacities: &capacities,
+            free_flow: &free_flow,
+            actual: &actual,
+            hour: sim_hour,
+            day_type,
+        };
+
+        prediction_service.update(&input, self.sim_time);
+    }
+
     /// Run one reroute evaluation step: process a batch of agents.
     ///
     /// Called after GPU dispatch and perception readback in the frame loop.
