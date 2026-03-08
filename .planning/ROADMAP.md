@@ -121,11 +121,11 @@ Plans:
   5. SignalController dispatch uses the trait polymorphically — actuated/adaptive controllers are instantiated based on intersection config, not hardcoded FixedTimeController
   6. sign_buffer is populated with sign data at startup via upload_signs() — handle_sign_interaction processes real sign data
   7. red_light_creep_speed() and intersection_gap_acceptance() are called from the GPU simulation path for motorbike agents
-**Plans:** 2/3 plans executed
+**Plans:** 3/3 plans complete
 Plans:
-- [ ] 09-01-PLAN.md — Startup initialization: vehicle config, polymorphic signals, sign upload, PerceptionPipeline
-- [ ] 09-02-PLAN.md — WGSL shader: perception_results binding + HCMC behaviors (red-light creep, gap acceptance)
-- [ ] 09-03-PLAN.md — Frame pipeline: perception dispatch, reroute, loop detectors, signal priority
+- [x] 09-01-PLAN.md — Startup initialization: vehicle config, polymorphic signals, sign upload, PerceptionPipeline
+- [x] 09-02-PLAN.md — WGSL shader: perception_results binding + HCMC behaviors (red-light creep, gap acceptance)
+- [x] 09-03-PLAN.md — Frame pipeline: perception dispatch, reroute, loop detectors, signal priority
 
 ### Phase 10: Sim Loop Integration — Bus Dwell & Meso-Micro Hybrid
 **Goal**: Bus agents stop at designated stops with realistic dwell times, and peripheral network zones run mesoscopic queue model with smooth micro-meso transitions through buffer zones
@@ -138,8 +138,8 @@ Plans:
   3. Agents crossing from meso to micro zones pass through the 100m buffer zone with velocity-matching insertion — no speed discontinuities at zone boundaries
 **Plans:** 2/2 plans complete
 Plans:
-- [ ] 10-01-PLAN.md — Bus dwell wiring: BusState spawn, step_bus_dwell CPU step, GPU FLAG_BUS_DWELLING guard
-- [ ] 10-02-PLAN.md — Meso-micro hybrid wiring: velos-meso dependency, zone config, step_meso, zone transitions
+- [x] 10-01-PLAN.md — Bus dwell wiring: BusState spawn, step_bus_dwell CPU step, GPU FLAG_BUS_DWELLING guard
+- [x] 10-02-PLAN.md — Meso-micro hybrid wiring: velos-meso dependency, zone config, step_meso, zone transitions
 
 ### Phase 11: GPU Buffer Wiring — Perception & Emergency
 **Goal**: Perception results reach GPU behavior functions (red-light creep, gap acceptance) via binding(8), and emergency vehicle yield cones activate via GPU upload — closing the last integration gaps in the sim loop
@@ -154,8 +154,8 @@ Plans:
   5. GPU yield cone activates for agents near emergency vehicles (not early-exiting due to zero count)
 **Plans:** 2/2 plans complete
 Plans:
-- [ ] 11-01-PLAN.md -- Perception buffer wiring: shared result buffer for binding(8)
-- [ ] 11-02-PLAN.md -- Emergency vehicle upload + FLAG_EMERGENCY_ACTIVE in step_vehicles_gpu
+- [x] 11-01-PLAN.md -- Perception buffer wiring: shared result buffer for binding(8)
+- [x] 11-02-PLAN.md -- Emergency vehicle upload + FLAG_EMERGENCY_ACTIVE in step_vehicles_gpu
 
 ## Progress
 
@@ -172,13 +172,13 @@ Phases 5 through 8 execute sequentially. Each phase depends on the prior phase.
 | 6. Agent Models & Signal Control | v1.1 | 7/7 | Complete | 2026-03-07 |
 | 7. Intelligence, Routing & Prediction | v1.1 | 6/6 | Complete | 2026-03-07 |
 | 8. Tuning Vehicle Behavior (HCM) | v1.1 | 3/3 | Complete | 2026-03-08 |
-| 9. Sim Loop Integration — Startup & Frame Pipeline | 2/3 | In Progress|  | - |
-| 10. Sim Loop Integration — Bus Dwell & Meso-Micro | 2/2 | Complete    | 2026-03-08 | - |
-| 11. GPU Buffer Wiring — Perception & Emergency | 2/2 | Complete    | 2026-03-08 | - |
-| 12. CPU Lane-Change, Prediction Loop & GPU Config | 2/2 | Complete    | 2026-03-08 | - |
-| 13. Final Integration Wiring & GPU Transfer Audit | 3/3 | Complete    | 2026-03-08 | - |
-| 14. Wire GTFS → Bus Stops Pipeline | 2/2 | Complete   | 2026-03-08 | - |
-| 15. File Size Reduction & Housekeeping | v1.1 | 0/0 | Not Started | - |
+| 9. Sim Loop Integration — Startup & Frame Pipeline | v1.1 | 3/3 | Complete | 2026-03-08 |
+| 10. Sim Loop Integration — Bus Dwell & Meso-Micro | v1.1 | 2/2 | Complete | 2026-03-08 |
+| 11. GPU Buffer Wiring — Perception & Emergency | v1.1 | 2/2 | Complete | 2026-03-08 |
+| 12. CPU Lane-Change, Prediction Loop & GPU Config | v1.1 | 2/2 | Complete | 2026-03-08 |
+| 13. Final Integration Wiring & GPU Transfer Audit | v1.1 | 3/3 | Complete | 2026-03-08 |
+| 14. Wire GTFS → Bus Stops Pipeline | v1.1 | 2/2 | Complete | 2026-03-08 |
+| 15. File Size Reduction & Housekeeping | v1.1 | 0/2 | Not Started | - |
 
 ### Phase 12: CPU Lane-Change, Prediction Loop & GPU Config
 **Goal**: MOBIL lane-change overtaking and motorbike lateral filtering wired into GPU tick loop, PredictionService::update() runs every 60 sim-seconds in the frame loop so prediction overlay refreshes live, and HCMC creep/gap behavior constants propagate from TOML config to GPU uniform buffer — closing the last 2 partial requirements and 2 integration gaps from the v1.1 audit
@@ -229,7 +229,7 @@ Plans:
 **Plans:** 2/2 plans complete
 Plans:
 - [x] 14-01-PLAN.md — Edge R-tree stop snapping (velos-net) + BusSpawner (velos-demand)
-- [ ] 14-02-PLAN.md — Wire GTFS loading + bus spawning into SimWorld startup and frame loop
+- [x] 14-02-PLAN.md — Wire GTFS loading + bus spawning into SimWorld startup and frame loop
 
 ### Phase 15: File Size Reduction & Housekeeping
 **Goal**: Reduce oversized source files below 700-line convention, fix stale tracking documents, and finalize Phase 13 Nyquist validation — pure tech debt closure with no behavioral changes
@@ -244,5 +244,5 @@ Plans:
   5. Phase 13 VALIDATION.md is compliant (not draft)
 **Plans:** 2 plans
 Plans:
-- [ ] 14-01-PLAN.md — Edge R-tree stop snapping (velos-net) + BusSpawner (velos-demand)
-- [ ] 14-02-PLAN.md — Wire GTFS loading + bus spawning into SimWorld startup and frame loop
+- [ ] 15-01-PLAN.md — Split sim.rs and compute.rs below 700-line convention
+- [ ] 15-02-PLAN.md — Fix stale tracking docs and finalize Phase 13 validation
