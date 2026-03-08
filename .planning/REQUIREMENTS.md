@@ -183,9 +183,10 @@ Which phases cover which requirements. Updated during roadmap creation.
 - v1.1 requirements: 45 total
 - Mapped to phases: 45
 - Unmapped: 0
-- Complete: 41
-- Pending: 4 (INT-01, INT-02, SIG-03, AGT-04 → Phase 13)
+- Complete: 45
+- Pending: 0
+- Gap closure phases: 14 (AGT-01, AGT-02 wiring), 15 (tech debt)
 
 ---
 *Requirements defined: 2026-03-07*
-*Last updated: 2026-03-08 -- 41/45 complete, 4 pending gap closure in Phase 13*
+*Last updated: 2026-03-08 -- 45/45 complete, gap closure phases 14-15 added*

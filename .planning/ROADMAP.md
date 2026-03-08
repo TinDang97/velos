@@ -3,7 +3,7 @@
 ## Milestones
 
 - Shipped **v1.0 MVP** -- Phases 1-4 (shipped 2026-03-07)
-- Active **v1.1 SUMO Replacement Engine** -- Phases 5-13 (in progress)
+- Active **v1.1 SUMO Replacement Engine** -- Phases 5-15 (in progress)
 
 ## Phases
 
@@ -19,15 +19,17 @@
 
 ### v1.1 SUMO Replacement Engine
 
-- [ ] **Phase 5: Foundation & GPU Engine** - God Crate decomposition, GPU physics cutover, multi-GPU wave-front dispatch, fixed-point arithmetic, 5-district HCMC network, SUMO file imports, Krauss car-following model (gap closure in progress)
+- [x] **Phase 5: Foundation & GPU Engine** - God Crate decomposition, GPU physics cutover, multi-GPU wave-front dispatch, fixed-point arithmetic, 5-district HCMC network, SUMO file imports, Krauss car-following model (completed 2026-03-07)
 - [x] **Phase 6: Agent Models & Signal Control** - All agent types at scale (bus, bicycle, truck, emergency), pedestrian adaptive workgroups, meso-micro hybrid, actuated/adaptive signals, V2I communication, traffic signs (completed 2026-03-07)
 - [x] **Phase 7: Intelligence, Routing & Prediction** - Agent intelligence (multi-factor cost, profiles, GPU perception/evaluation), CCH routing, prediction ensemble, staggered reroute, global knowledge routing (completed 2026-03-07)
 - [x] **Phase 8: Tuning Vehicle Behavior (HCM)** - Vehicle behavior externalized to TOML config, GPU/CPU parameter parity, HCMC-specific behavioral rules (completed 2026-03-08)
-- [ ] **Phase 9: Sim Loop Integration — Startup & Frame Pipeline** - Wire all Phase 6-8 modules into sim.rs tick_gpu() and app.rs startup: perception, reroute, polymorphic signals, sign upload, vehicle params, HCMC behaviors
+- [x] **Phase 9: Sim Loop Integration — Startup & Frame Pipeline** - Wire all Phase 6-8 modules into sim.rs tick_gpu() and app.rs startup: perception, reroute, polymorphic signals, sign upload, vehicle params, HCMC behaviors (completed 2026-03-08)
 - [x] **Phase 10: Sim Loop Integration — Bus Dwell & Meso-Micro Hybrid** - Wire bus dwell lifecycle and velos-meso crate into sim loop for peripheral zone transitions (completed 2026-03-08)
 - [x] **Phase 11: GPU Buffer Wiring — Perception & Emergency** - Wire perception result buffer to wave_front.wgsl binding(8) and emergency vehicle upload to sim loop tick (gap closure) (completed 2026-03-08)
 - [x] **Phase 12: CPU Lane-Change, Prediction Loop & GPU Config** - MOBIL overtaking, motorbike lateral filtering in GPU tick loop, prediction overlay refresh, HCMC creep/gap params to GPU (includes gap closure)
 - [x] **Phase 13: Final Integration Wiring & GPU Transfer Audit** - Wire profile encoding at spawn (INT-02/INT-01), GLOSA consumption (SIG-03), GPU pedestrian dispatch (AGT-04), CPU tick parity, and eliminate wasteful per-frame GPU transfers (completed 2026-03-08)
+- [ ] **Phase 14: Wire GTFS → Bus Stops Pipeline** - Connect GTFS import output to SimWorld.bus_stops so bus dwell lifecycle is active, not inert (gap closure)
+- [ ] **Phase 15: File Size Reduction & Housekeeping** - Split oversized files (sim.rs, compute.rs), fix stale tracking docs, finalize Phase 13 validation (tech debt closure)
 
 ## Phase Details
 
@@ -175,6 +177,8 @@ Phases 5 through 8 execute sequentially. Each phase depends on the prior phase.
 | 11. GPU Buffer Wiring — Perception & Emergency | 2/2 | Complete    | 2026-03-08 | - |
 | 12. CPU Lane-Change, Prediction Loop & GPU Config | 2/2 | Complete    | 2026-03-08 | - |
 | 13. Final Integration Wiring & GPU Transfer Audit | 3/3 | Complete    | 2026-03-08 | - |
+| 14. Wire GTFS → Bus Stops Pipeline | v1.1 | 0/0 | Not Started | - |
+| 15. File Size Reduction & Housekeeping | v1.1 | 0/0 | Not Started | - |
 
 ### Phase 12: CPU Lane-Change, Prediction Loop & GPU Config
 **Goal**: MOBIL lane-change overtaking and motorbike lateral filtering wired into GPU tick loop, PredictionService::update() runs every 60 sim-seconds in the frame loop so prediction overlay refreshes live, and HCMC creep/gap behavior constants propagate from TOML config to GPU uniform buffer — closing the last 2 partial requirements and 2 integration gaps from the v1.1 audit
@@ -212,3 +216,31 @@ Plans:
 - [x] 13-01-PLAN.md — Profile encoding at spawn + GLOSA advisory speed wiring (INT-01, INT-02, SIG-03)
 - [x] 13-02-PLAN.md — GPU pedestrian adaptive pipeline activation (AGT-04)
 - [x] 13-03-PLAN.md — CPU tick parity + dirty-flag buffer upload optimization
+
+### Phase 14: Wire GTFS → Bus Stops Pipeline
+**Goal**: GTFS import output populates SimWorld.bus_stops at startup so the bus dwell lifecycle is active — buses actually stop at designated locations rather than the dwell infrastructure being inert
+**Depends on**: Phase 13
+**Requirements**: AGT-01, AGT-02
+**Gap Closure:** Closes integration gap (GTFS → bus_stops) and flow gap (bus dwell lifecycle E2E) from v1.1 audit
+**Success Criteria** (what must be TRUE):
+  1. SimWorld startup loads GTFS data and populates bus_stops — bus_stops.len() > 0 when GTFS data is available
+  2. Bus agents spawned on GTFS routes encounter BusStop locations and trigger begin_dwell() — FLAG_BUS_DWELLING is set during dwell
+  3. E2E bus dwell lifecycle works: GTFS load → bus_stops populated → bus arrives → dwell → resume
+**Plans:** 0/0
+Plans:
+(none yet)
+
+### Phase 15: File Size Reduction & Housekeeping
+**Goal**: Reduce oversized source files below 700-line convention, fix stale tracking documents, and finalize Phase 13 Nyquist validation — pure tech debt closure with no behavioral changes
+**Depends on**: Phase 14
+**Requirements**: (none — tech debt only)
+**Gap Closure:** Closes tech debt items from v1.1 audit
+**Success Criteria** (what must be TRUE):
+  1. sim.rs is under 700 lines — logic extracted into focused submodules with re-exports
+  2. compute.rs is under 700 lines — shader pipeline stages extracted into submodules
+  3. REQUIREMENTS.md footer matches actual coverage (45/45 complete, 0 pending)
+  4. ROADMAP.md Phase 5 and Phase 9 checkboxes reflect completed status
+  5. Phase 13 VALIDATION.md is compliant (not draft)
+**Plans:** 0/0
+Plans:
+(none yet)
