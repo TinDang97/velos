@@ -204,7 +204,8 @@ impl PedestrianAdaptivePipeline {
             | wgpu::BufferUsages::COPY_SRC;
 
         let needs_recreate =
-            self.ped_buffer.as_ref().is_none_or(|b| b.size() < ped_bytes.max(32));
+            self.ped_buffer.as_ref().is_none_or(|b| b.size() < ped_bytes.max(32))
+            || self.cell_counts_buffer.as_ref().is_none_or(|b| b.size() < cell_u32_bytes.max(4));
 
         if needs_recreate {
             self.ped_buffer = Some(device.create_buffer(&wgpu::BufferDescriptor {
