@@ -319,7 +319,7 @@ mod tests {
 
     #[allow(dead_code)]
     fn make_edge(length: f64, road_class: RoadClass) -> crate::graph::RoadEdge {
-        RoadEdge {
+        crate::graph::RoadEdge {
             length_m: length,
             speed_limit_mps: 13.9,
             lane_count: 2,
