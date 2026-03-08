@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: SUMO Replacement Engine
-status: completed
-stopped_at: Completed 12-02-PLAN.md (MOBIL lane-change + sublane + prediction wiring)
-last_updated: "2026-03-08T10:27:45.310Z"
-last_activity: 2026-03-08 -- Completed Plan 12-02 (MOBIL lane-change + sublane + prediction wiring)
+status: in-progress
+stopped_at: Completed 13-02-PLAN.md (pedestrian GPU adaptive pipeline wiring)
+last_updated: "2026-03-08T13:28:31Z"
+last_activity: 2026-03-08 -- Completed Plan 13-02 (pedestrian GPU adaptive pipeline wiring)
 progress:
-  total_phases: 8
+  total_phases: 9
   completed_phases: 8
-  total_plans: 31
-  completed_plans: 31
-  percent: 100
+  total_plans: 34
+  completed_plans: 33
+  percent: 97
 ---
 
 # Project State
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-07)
 
 **Core value:** Motorbikes move realistically through traffic using continuous sublane positioning -- not forced into discrete lanes like Western traffic models
-**Current focus:** Phase 12 -- CPU Lane-Change & Sublane Wiring
+**Current focus:** Phase 13 -- Final Integration Wiring & GPU Transfer Audit
 
 ## Current Position
 
-Phase: 12 of 12 (CPU Lane-Change & Sublane Wiring)
-Plan: 02 of 02 complete -- 02 (MOBIL lane-change + sublane + prediction wiring)
-Status: Phase 12 complete
-Last activity: 2026-03-08 -- Completed Plan 12-02 (MOBIL lane-change + sublane + prediction wiring)
+Phase: 13 of 13 (Final Integration Wiring & GPU Transfer Audit)
+Plan: 02 of 03 complete -- 02 (pedestrian GPU adaptive pipeline wiring)
+Status: In progress
+Last activity: 2026-03-08 -- Completed Plan 13-02 (pedestrian GPU adaptive pipeline wiring)
 
-Progress: [██████████] 100%
+Progress: [█████████░] 97%
 
 ## Accumulated Context
 
@@ -150,6 +150,9 @@ Recent decisions affecting current work:
 - [12-02]: Spatial index rebuilt post-GPU for sublane (snapshot_post + spatial_post) -- avoids stale gaps
 - [12-01]: GAP_MAX_WAIT_TIME/GAP_FORCED_ACCEPTANCE_FACTOR/GAP_WAIT_REDUCTION_RATE kept as local lets (universal physics, not vehicle-specific)
 - [12-01]: gap_acceptance_ttc replaces t_headway as base TTC threshold in WGSL intersection gap acceptance
+- [13-02]: classify_density used for adaptive cell sizing (2m/5m/10m) instead of hardcoded 3m in GPU pedestrian dispatch
+- [13-02]: 5m bounding box margin prevents degenerate zero-size grids when pedestrians are co-located
+- [13-02]: CPU tick() step_pedestrians unchanged -- GPU path only in tick_gpu()
 
 ### Pending Todos
 
@@ -159,6 +162,7 @@ None.
 
 - Phase 8 added: tuning vehicle behavior to more realistic in HCM
 - Phase 12 added: CPU Lane-Change & Sublane Wiring — MOBIL overtaking and motorbike lateral filtering in GPU tick loop
+- Phase 13 added: Final Integration Wiring & GPU Transfer Audit — gap closure for remaining unwired subsystems
 
 ### Blockers/Concerns
 
@@ -169,6 +173,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-08T10:21:39Z
-Stopped at: Completed 12-02-PLAN.md (MOBIL lane-change + sublane + prediction wiring)
-Resume file: All plans complete
+Last session: 2026-03-08T13:28:31Z
+Stopped at: Completed 13-02-PLAN.md (pedestrian GPU adaptive pipeline wiring)
+Resume file: .planning/phases/13-final-integration-wiring-gpu-transfer-audit/13-03-PLAN.md
