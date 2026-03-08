@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: SUMO Replacement Engine
-status: completed
-stopped_at: Completed 11-02-PLAN.md
-last_updated: "2026-03-08T08:08:47.412Z"
-last_activity: 2026-03-08 -- Completed Plan 11-02 (emergency vehicle GPU wiring)
+status: in-progress
+stopped_at: Completed 12-01-PLAN.md
+last_updated: "2026-03-08T10:06:09Z"
+last_activity: 2026-03-08 -- Completed Plan 12-01 (GPU vehicle params extension)
 progress:
-  total_phases: 7
+  total_phases: 9
   completed_phases: 7
-  total_plans: 29
-  completed_plans: 29
-  percent: 100
+  total_plans: 31
+  completed_plans: 30
+  percent: 96
 ---
 
 # Project State
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-07)
 
 **Core value:** Motorbikes move realistically through traffic using continuous sublane positioning -- not forced into discrete lanes like Western traffic models
-**Current focus:** Phase 11 complete -- GPU Buffer Wiring: Perception & Emergency
+**Current focus:** Phase 12 -- CPU Lane-Change & Sublane Wiring
 
 ## Current Position
 
-Phase: 11 of 11 (GPU Buffer Wiring: Perception & Emergency)
-Plan: 02 of 02 complete -- 02 (emergency vehicle GPU wiring)
-Status: Phase 11 complete
-Last activity: 2026-03-08 -- Completed Plan 11-02 (emergency vehicle GPU wiring)
+Phase: 12 of 12 (CPU Lane-Change & Sublane Wiring)
+Plan: 01 of 02 complete -- 01 (GPU vehicle params extension)
+Status: Phase 12 in progress
+Last activity: 2026-03-08 -- Completed Plan 12-01 (GPU vehicle params extension)
 
-Progress: [██████████] 100%
+Progress: [█████████░] 96%
 
 ## Accumulated Context
 
@@ -143,6 +143,9 @@ Recent decisions affecting current work:
 - [10-02]: step_meso() runs BEFORE step_vehicles_gpu (meso agents ready for buffer zone insertion before micro physics)
 - [Phase 11]: [11-01]: ComputeDispatcher owns shared perception buffer; PerceptionPipeline receives references via PerceptionBindings and readback_results parameter
 - [Phase 11]: [11-02]: compute_agent_flags() extracted as public pure function for testable flag bitfield computation
+- [12-01]: GpuVehicleParams extended from 8 to 12 floats per vehicle type (224->336 bytes): +creep_max_speed, creep_distance_scale, creep_min_distance, gap_acceptance_ttc
+- [12-01]: GAP_MAX_WAIT_TIME/GAP_FORCED_ACCEPTANCE_FACTOR/GAP_WAIT_REDUCTION_RATE kept as local lets (universal physics, not vehicle-specific)
+- [12-01]: gap_acceptance_ttc replaces t_headway as base TTC threshold in WGSL intersection gap acceptance
 
 ### Pending Todos
 
@@ -151,6 +154,7 @@ None.
 ### Roadmap Evolution
 
 - Phase 8 added: tuning vehicle behavior to more realistic in HCM
+- Phase 12 added: CPU Lane-Change & Sublane Wiring — MOBIL overtaking and motorbike lateral filtering in GPU tick loop
 
 ### Blockers/Concerns
 
@@ -161,6 +165,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-08T08:05:44.057Z
-Stopped at: Completed 11-02-PLAN.md
-Resume file: None
+Last session: 2026-03-08T10:06:09Z
+Stopped at: Completed 12-01-PLAN.md (GPU vehicle params extension)
+Resume file: .planning/phases/12-cpu-lane-change-sublane-wiring-mobil-overtaking-and-motorbike-lateral-filtering-in-gpu-tick-loop/12-02-PLAN.md
