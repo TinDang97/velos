@@ -3,7 +3,7 @@
 ## Milestones
 
 - Shipped **v1.0 MVP** -- Phases 1-4 (shipped 2026-03-07)
-- Active **v1.1 SUMO Replacement Engine** -- Phases 5-7 (in progress)
+- Active **v1.1 SUMO Replacement Engine** -- Phases 5-10 (in progress)
 
 ## Phases
 
@@ -20,8 +20,11 @@
 ### v1.1 SUMO Replacement Engine
 
 - [ ] **Phase 5: Foundation & GPU Engine** - God Crate decomposition, GPU physics cutover, multi-GPU wave-front dispatch, fixed-point arithmetic, 5-district HCMC network, SUMO file imports, Krauss car-following model (gap closure in progress)
-- [ ] **Phase 6: Agent Models & Signal Control** - All agent types at scale (bus, bicycle, truck, emergency), pedestrian adaptive workgroups, meso-micro hybrid, actuated/adaptive signals, V2I communication, traffic signs
+- [x] **Phase 6: Agent Models & Signal Control** - All agent types at scale (bus, bicycle, truck, emergency), pedestrian adaptive workgroups, meso-micro hybrid, actuated/adaptive signals, V2I communication, traffic signs (completed 2026-03-07)
 - [x] **Phase 7: Intelligence, Routing & Prediction** - Agent intelligence (multi-factor cost, profiles, GPU perception/evaluation), CCH routing, prediction ensemble, staggered reroute, global knowledge routing (completed 2026-03-07)
+- [x] **Phase 8: Tuning Vehicle Behavior (HCM)** - Vehicle behavior externalized to TOML config, GPU/CPU parameter parity, HCMC-specific behavioral rules (completed 2026-03-08)
+- [ ] **Phase 9: Sim Loop Integration — Startup & Frame Pipeline** - Wire all Phase 6-8 modules into sim.rs tick_gpu() and app.rs startup: perception, reroute, polymorphic signals, sign upload, vehicle params, HCMC behaviors
+- [ ] **Phase 10: Sim Loop Integration — Bus Dwell & Meso-Micro Hybrid** - Wire bus dwell lifecycle and velos-meso crate into sim loop for peripheral zone transitions
 
 ## Phase Details
 
@@ -54,15 +57,15 @@ Plans:
   3. Pedestrian simulation at varying densities shows GPU workgroup adaptation (sparse areas use fewer threads, dense areas use more) with measurable speedup over uniform dispatch
   4. Agents approaching a speed limit sign visibly reduce to the posted speed, and agents at a no-turn restriction do not attempt the restricted maneuver
   5. Peripheral network zones run mesoscopic queue model (O(1) per edge) while core zones remain microscopic, with agents transitioning smoothly through 100m buffer zones without speed discontinuities
-**Plans:** 7 plans
+**Plans:** 7/7 plans complete
 Plans:
 - [x] 06-01-PLAN.md -- GpuAgentState expansion (32->40 bytes) + VehicleType extension + new agent type params
-- [ ] 06-02-PLAN.md -- Bus agents with dwell model + GTFS import for HCMC bus routes
-- [ ] 06-03-PLAN.md -- Actuated + adaptive signal controllers with loop detectors
-- [ ] 06-04-PLAN.md -- Emergency vehicle yield behavior + GPU shader branching
-- [ ] 06-05-PLAN.md -- V2I: SPaT broadcast, signal priority, traffic signs
-- [ ] 06-06-PLAN.md -- Pedestrian adaptive GPU workgroups with prefix-sum compaction
-- [ ] 06-07-PLAN.md -- Meso-micro hybrid: velos-meso crate with BPR queue model + buffer zones
+- [x] 06-02-PLAN.md -- Bus agents with dwell model + GTFS import for HCMC bus routes
+- [x] 06-03-PLAN.md -- Actuated + adaptive signal controllers with loop detectors
+- [x] 06-04-PLAN.md -- Emergency vehicle yield behavior + GPU shader branching
+- [x] 06-05-PLAN.md -- V2I: SPaT broadcast, signal priority, traffic signs
+- [x] 06-06-PLAN.md -- Pedestrian adaptive GPU workgroups with prefix-sum compaction
+- [x] 06-07-PLAN.md -- Meso-micro hybrid: velos-meso crate with BPR queue model + buffer zones
 
 ### Phase 7: Intelligence, Routing & Prediction
 **Goal**: Agents make intelligent route choices using predicted future conditions, reroute dynamically around congestion, and exhibit profile-driven behavior differences
@@ -94,11 +97,39 @@ Plans:
   4. Motorbikes inch forward past the stop line during red lights, forming a dense swarm that launches first on green
   5. Motorbikes squeeze through 0.5m lateral gaps at low speed differences, with gap threshold widening at higher speed differences
   6. Vehicles at unsignalized intersections negotiate via gap acceptance with vehicle-type-dependent TTC thresholds and no deadlock
-**Plans:** 3 plans
+**Plans:** 3/3 plans complete
 Plans:
-- [ ] 08-01-PLAN.md -- VehicleConfig TOML infrastructure + HCMC-calibrated defaults + factory migration
-- [ ] 08-02-PLAN.md -- GPU parameter unification: GpuVehicleParams uniform buffer + WGSL shader migration
-- [ ] 08-03-PLAN.md -- HCMC behavioral rules: red-light creep, aggressive weaving, intersection gap acceptance
+- [x] 08-01-PLAN.md -- VehicleConfig TOML infrastructure + HCMC-calibrated defaults + factory migration
+- [x] 08-02-PLAN.md -- GPU parameter unification: GpuVehicleParams uniform buffer + WGSL shader migration
+- [x] 08-03-PLAN.md -- HCMC behavioral rules: red-light creep, aggressive weaving, intersection gap acceptance
+
+### Phase 9: Sim Loop Integration — Startup & Frame Pipeline
+**Goal**: All Phase 6-8 modules are wired into sim.rs::tick_gpu() and app.rs::GpuState::new() — the simulation runs the full pipeline (perception, reroute, polymorphic signals, sign interaction, vehicle params, HCMC behaviors) not just Phase 5 physics
+**Depends on**: Phase 8
+**Requirements**: SIG-01, SIG-02, SIG-03, SIG-04, SIG-05, INT-03, INT-04, INT-05, RTE-03, RTE-07, TUN-02, TUN-04, TUN-06
+**Gap Closure:** Closes M-1 through M-6, M-9 from v1.1 audit
+**Success Criteria** (what must be TRUE):
+  1. upload_vehicle_params() is called at startup — GPU uniform buffer at binding 7 contains correct per-type parameters, not zeros
+  2. init_reroute() is called at startup — CCH router, prediction overlay, and reroute scheduler are initialized and non-None
+  3. PerceptionPipeline is instantiated in GpuState and dispatched every frame in tick_gpu() — perception_results buffer is populated
+  4. step_reroute() is called every frame after perception — agents with should_reroute flag receive new CCH routes
+  5. SignalController dispatch uses the trait polymorphically — actuated/adaptive controllers are instantiated based on intersection config, not hardcoded FixedTimeController
+  6. sign_buffer is populated with sign data at startup via upload_signs() — handle_sign_interaction processes real sign data
+  7. red_light_creep_speed() and intersection_gap_acceptance() are called from the GPU simulation path for motorbike agents
+**Plans:** 0 plans
+Plans: (none yet)
+
+### Phase 10: Sim Loop Integration — Bus Dwell & Meso-Micro Hybrid
+**Goal**: Bus agents stop at designated stops with realistic dwell times, and peripheral network zones run mesoscopic queue model with smooth micro-meso transitions through buffer zones
+**Depends on**: Phase 9
+**Requirements**: AGT-01, AGT-05, AGT-06
+**Gap Closure:** Closes M-7, M-8 from v1.1 audit
+**Success Criteria** (what must be TRUE):
+  1. begin_dwell() and tick_dwell() are called in the sim loop — buses stop at BusStop locations, FLAG_BUS_DWELLING is set, and dwell time follows the empirical model (5s + 0.5s/boarding + 0.67s/alighting)
+  2. velos-meso is a dependency of velos-core or velos-gpu — the crate is imported and its queue model is active for peripheral zone edges
+  3. Agents crossing from meso to micro zones pass through the 100m buffer zone with velocity-matching insertion — no speed discontinuities at zone boundaries
+**Plans:** 0 plans
+Plans: (none yet)
 
 ## Progress
 
@@ -112,6 +143,8 @@ Phases 5 through 8 execute sequentially. Each phase depends on the prior phase.
 | 3. Motorbike Sublane & Pedestrians | v1.0 | 2/2 | Complete | 2026-03-07 |
 | 4. MOBIL Wiring + Motorbike Jam Fix + Performance | v1.0 | 3/3 | Complete | 2026-03-07 |
 | 5. Foundation & GPU Engine | v1.1 | 6/6 | Complete | 2026-03-07 |
-| 6. Agent Models & Signal Control | v1.1 | 1/7 | In progress | - |
+| 6. Agent Models & Signal Control | v1.1 | 7/7 | Complete | 2026-03-07 |
 | 7. Intelligence, Routing & Prediction | v1.1 | 6/6 | Complete | 2026-03-07 |
-| 8. Tuning Vehicle Behavior (HCM) | v1.1 | 0/3 | Planned | - |
+| 8. Tuning Vehicle Behavior (HCM) | v1.1 | 3/3 | Complete | 2026-03-08 |
+| 9. Sim Loop Integration — Startup & Frame Pipeline | v1.1 | 0/0 | Planned | - |
+| 10. Sim Loop Integration — Bus Dwell & Meso-Micro | v1.1 | 0/0 | Planned | - |

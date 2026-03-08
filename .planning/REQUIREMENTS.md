@@ -33,12 +33,12 @@ Prove VELOS can replace SUMO: reimplement all core SUMO features, add agent inte
 
 ### Agent Models
 
-- [x] **AGT-01**: Bus agents with empirical dwell time model (5s + 0.5s/boarding + 0.67s/alighting, cap 60s)
+- [ ] **AGT-01**: Bus agents with empirical dwell time model (5s + 0.5s/boarding + 0.67s/alighting, cap 60s)
 - [x] **AGT-02**: GTFS import for 130 HCMC bus routes with stop locations and schedules
 - [x] **AGT-03**: Bicycle agents with sublane model (rightmost position, IDM v0=15km/h)
 - [x] **AGT-04**: Pedestrian adaptive GPU workgroups with prefix-sum compaction (3-8x speedup)
-- [x] **AGT-05**: Meso-micro hybrid with 100m graduated buffer zone and velocity-matching insertion
-- [x] **AGT-06**: Mesoscopic queue model (O(1) per edge) for peripheral network zones
+- [ ] **AGT-05**: Meso-micro hybrid with 100m graduated buffer zone and velocity-matching insertion
+- [ ] **AGT-06**: Mesoscopic queue model (O(1) per edge) for peripheral network zones
 - [x] **AGT-07**: Truck agent type with distinct dynamics (12m length, 1.0 m/s2 accel, 90 km/h max)
 - [x] **AGT-08**: Emergency vehicle with priority behavior and yield-to-emergency from other agents
 
@@ -46,36 +46,36 @@ Prove VELOS can replace SUMO: reimplement all core SUMO features, add agent inte
 
 - [x] **INT-01**: Multi-factor pathfinding cost function: time, comfort, safety, fuel, signal delay, prediction penalty
 - [x] **INT-02**: Configurable agent profiles (Commuter, Bus, Truck, Emergency, Tourist, Teen, Senior, Cyclist) with per-profile cost weights
-- [x] **INT-03**: GPU perception phase: sense leader vehicle, signal state, traffic signs, nearby agents, global congestion map
-- [x] **INT-04**: GPU evaluation phase: cost comparison current route vs alternative, output should_reroute flag + cost_delta
-- [x] **INT-05**: Staggered reroute evaluation (1K agents/step, ~50s full cycle) with immediate triggers for blocked edges, emergency vehicles, and prediction flags
+- [ ] **INT-03**: GPU perception phase: sense leader vehicle, signal state, traffic signs, nearby agents, global congestion map
+- [ ] **INT-04**: GPU evaluation phase: cost comparison current route vs alternative, output should_reroute flag + cost_delta
+- [ ] **INT-05**: Staggered reroute evaluation (1K agents/step, ~50s full cycle) with immediate triggers for blocked edges, emergency vehicles, and prediction flags
 
 ### Routing & Prediction
 
 - [x] **RTE-01**: CCH (Customizable Contraction Hierarchies) replaces A* for pathfinding on 25K-edge network
 - [x] **RTE-02**: CCH supports 3ms dynamic weight customization without full re-contraction
-- [x] **RTE-03**: Dynamic agent rerouting at 500 reroutes/step using CCH queries (0.02ms/query)
+- [ ] **RTE-03**: Dynamic agent rerouting at 500 reroutes/step using CCH queries (0.02ms/query)
 - [x] **RTE-04**: BPR + ETS + historical prediction ensemble runs in-process every 60 sim-seconds
 - [x] **RTE-05**: Prediction overlay uses ArcSwap for zero-copy, lock-free weight updates to CCH
 - [x] **RTE-06**: Global network knowledge routing -- real-time congestion map (edge travel times) feeds into pathfinding cost function
-- [x] **RTE-07**: Prediction-informed routing -- cost function uses predicted future travel times, not just current observed
+- [ ] **RTE-07**: Prediction-informed routing -- cost function uses predicted future travel times, not just current observed
 
 ### Signal Control & V2I
 
-- [x] **SIG-01**: Actuated signal control with loop detector-triggered phase transitions
-- [x] **SIG-02**: Adaptive signal control with demand-responsive timing optimization
-- [x] **SIG-03**: SPaT (Signal Phase and Timing) broadcast to agents within range for signal-aware driving
-- [x] **SIG-04**: Signal priority request from buses and emergency vehicles
-- [x] **SIG-05**: Traffic sign interaction: speed limits, stop/yield, no-turn restrictions, school zones affect agent speed targets and cost function
+- [ ] **SIG-01**: Actuated signal control with loop detector-triggered phase transitions
+- [ ] **SIG-02**: Adaptive signal control with demand-responsive timing optimization
+- [ ] **SIG-03**: SPaT (Signal Phase and Timing) broadcast to agents within range for signal-aware driving
+- [ ] **SIG-04**: Signal priority request from buses and emergency vehicles
+- [ ] **SIG-05**: Traffic sign interaction: speed limits, stop/yield, no-turn restrictions, school zones affect agent speed targets and cost function
 
 ### HCMC Behavior Tuning
 
 - [x] **TUN-01**: All ~50 vehicle behavior parameters externalized to TOML config file (data/hcmc/vehicle_params.toml) with per-vehicle-type sections
-- [x] **TUN-02**: GPU/CPU parameter parity -- GPU shader reads vehicle-type parameters from uniform buffer populated from config, eliminating hardcoded WGSL constants
+- [ ] **TUN-02**: GPU/CPU parameter parity -- GPU shader reads vehicle-type parameters from uniform buffer populated from config, eliminating hardcoded WGSL constants
 - [x] **TUN-03**: HCMC-calibrated parameter defaults for all vehicle types (motorbike v0=35-45 km/h, car v0=30-40 km/h, truck v0=30-40 km/h not 90 km/h)
-- [x] **TUN-04**: Red-light creep behavior -- motorbikes inch past stop line during red, forming dense swarm ahead of cars
+- [ ] **TUN-04**: Red-light creep behavior -- motorbikes inch past stop line during red, forming dense swarm ahead of cars
 - [x] **TUN-05**: Aggressive weaving -- speed-dependent lateral filter gap (0.5m base + 0.1*delta_v) for motorbike squeeze-through
-- [x] **TUN-06**: Yield-based intersection negotiation -- vehicle-type-dependent TTC gap acceptance with size intimidation and deadlock prevention
+- [ ] **TUN-06**: Yield-based intersection negotiation -- vehicle-type-dependent TTC gap acceptance with size intimidation and deadlock prevention
 
 ## v2 Requirements
 
@@ -147,42 +147,44 @@ Which phases cover which requirements. Updated during roadmap creation.
 | NET-06 | Phase 5 | Complete |
 | CFM-01 | Phase 5 | Complete (05-01) |
 | CFM-02 | Phase 5 | Complete (05-01) |
-| AGT-01 | Phase 6 | Complete |
+| AGT-01 | Phase 10 | Pending |
 | AGT-02 | Phase 6 | Complete |
 | AGT-03 | Phase 6 | Complete (06-01) |
 | AGT-04 | Phase 6 | Complete |
-| AGT-05 | Phase 6 | Complete |
-| AGT-06 | Phase 6 | Complete |
+| AGT-05 | Phase 10 | Pending |
+| AGT-06 | Phase 10 | Pending |
 | AGT-07 | Phase 6 | Complete (06-01) |
 | AGT-08 | Phase 6 | Complete |
-| SIG-01 | Phase 6 | Complete |
-| SIG-02 | Phase 6 | Complete |
-| SIG-03 | Phase 6 | Complete |
-| SIG-04 | Phase 6 | Complete |
-| SIG-05 | Phase 6 | Complete |
+| SIG-01 | Phase 9 | Pending |
+| SIG-02 | Phase 9 | Pending |
+| SIG-03 | Phase 9 | Pending |
+| SIG-04 | Phase 9 | Pending |
+| SIG-05 | Phase 9 | Pending |
 | INT-01 | Phase 7 | Complete |
 | INT-02 | Phase 7 | Complete |
-| INT-03 | Phase 7 | Complete |
-| INT-04 | Phase 7 | Complete |
-| INT-05 | Phase 7 | Complete |
+| INT-03 | Phase 9 | Pending |
+| INT-04 | Phase 9 | Pending |
+| INT-05 | Phase 9 | Pending |
 | RTE-01 | Phase 7 | Complete |
 | RTE-02 | Phase 7 | Complete |
-| RTE-03 | Phase 7 | Complete |
+| RTE-03 | Phase 9 | Pending |
 | RTE-04 | Phase 7 | Complete |
 | RTE-05 | Phase 7 | Complete |
 | RTE-06 | Phase 7 | Complete |
-| RTE-07 | Phase 7 | Complete |
-| TUN-01 | Phase 8 | Planned |
-| TUN-02 | Phase 8 | Planned |
-| TUN-03 | Phase 8 | Planned |
-| TUN-04 | Phase 8 | Planned |
-| TUN-05 | Phase 8 | Planned |
-| TUN-06 | Phase 8 | Planned |
+| RTE-07 | Phase 9 | Pending |
+| TUN-01 | Phase 8 | Complete |
+| TUN-02 | Phase 9 | Pending |
+| TUN-03 | Phase 8 | Complete |
+| TUN-04 | Phase 9 | Pending |
+| TUN-05 | Phase 8 | Complete |
+| TUN-06 | Phase 9 | Pending |
 
 **Coverage:**
 - v1.1 requirements: 45 total
 - Mapped to phases: 45
 - Unmapped: 0
+- Complete: 29
+- Pending (gap closure): 16 (Phase 9: 13, Phase 10: 3)
 
 ---
 *Requirements defined: 2026-03-07*
