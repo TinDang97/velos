@@ -3,7 +3,7 @@
 ## Milestones
 
 - Shipped **v1.0 MVP** -- Phases 1-4 (shipped 2026-03-07)
-- Active **v1.1 SUMO Replacement Engine** -- Phases 5-11 (in progress)
+- Active **v1.1 SUMO Replacement Engine** -- Phases 5-12 (in progress)
 
 ## Phases
 
@@ -26,6 +26,7 @@
 - [ ] **Phase 9: Sim Loop Integration — Startup & Frame Pipeline** - Wire all Phase 6-8 modules into sim.rs tick_gpu() and app.rs startup: perception, reroute, polymorphic signals, sign upload, vehicle params, HCMC behaviors
 - [x] **Phase 10: Sim Loop Integration — Bus Dwell & Meso-Micro Hybrid** - Wire bus dwell lifecycle and velos-meso crate into sim loop for peripheral zone transitions (completed 2026-03-08)
 - [x] **Phase 11: GPU Buffer Wiring — Perception & Emergency** - Wire perception result buffer to wave_front.wgsl binding(8) and emergency vehicle upload to sim loop tick (gap closure) (completed 2026-03-08)
+- [ ] **Phase 12: CPU Lane-Change, Prediction Loop & GPU Config** - MOBIL overtaking, motorbike lateral filtering in GPU tick loop, prediction overlay refresh, HCMC creep/gap params to GPU (includes gap closure)
 
 ## Phase Details
 
@@ -171,3 +172,21 @@ Phases 5 through 8 execute sequentially. Each phase depends on the prior phase.
 | 9. Sim Loop Integration — Startup & Frame Pipeline | 2/3 | In Progress|  | - |
 | 10. Sim Loop Integration — Bus Dwell & Meso-Micro | 2/2 | Complete    | 2026-03-08 | - |
 | 11. GPU Buffer Wiring — Perception & Emergency | 2/2 | Complete    | 2026-03-08 | - |
+| 12. CPU Lane-Change, Prediction Loop & GPU Config | v1.1 | 0/0 | Planned | - |
+
+### Phase 12: CPU Lane-Change, Prediction Loop & GPU Config
+**Goal**: MOBIL lane-change overtaking and motorbike lateral filtering wired into GPU tick loop, PredictionService::update() runs every 60 sim-seconds in the frame loop so prediction overlay refreshes live, and HCMC creep/gap behavior constants propagate from TOML config to GPU uniform buffer — closing the last 2 partial requirements and 2 integration gaps from the v1.1 audit
+**Depends on**: Phase 11
+**Requirements**: RTE-05, RTE-07, TUN-04, TUN-06, TBD (lane-change)
+**Gap Closure:** Closes RTE-05 (partial), RTE-07 (partial), integration gaps (PredictionService→frame loop, HCMC params→GPU)
+**Success Criteria** (what must be TRUE):
+  1. PredictionService::update() is called in tick_gpu() after step_vehicles_gpu when should_update(sim_time) returns true — overlay refreshes every 60 sim-seconds with actual edge flow/capacity data
+  2. ArcSwap swap occurs at runtime — prediction overlay contains non-free-flow values after first 60s interval
+  3. GpuVehicleParams struct includes creep_max_speed, creep_distance_scale, and gap_acceptance_ttc fields populated from VehicleConfig
+  4. WGSL VehicleTypeParams struct matches the extended GpuVehicleParams — no hardcoded CREEP_MAX_SPEED or CREEP_DISTANCE_SCALE constants remain in wave_front.wgsl
+  5. MOBIL lane-change decisions are evaluated and overtaking maneuvers execute in the GPU tick loop
+  6. Motorbike lateral filtering (sublane squeeze-through) integrates with the lane-change pipeline
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run /gsd:plan-phase 12 to break down)

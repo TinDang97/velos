@@ -169,9 +169,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 | RTE-02 | Phase 7 | Complete |
 | RTE-03 | Phase 9 | Complete |
 | RTE-04 | Phase 7 | Complete |
-| RTE-05 | Phase 7 | Complete |
+| RTE-05 | Phase 12 | Pending |
 | RTE-06 | Phase 7 | Complete |
-| RTE-07 | Phase 9 | Complete |
+| RTE-07 | Phase 12 | Pending |
 | TUN-01 | Phase 8 | Complete |
 | TUN-02 | Phase 9 | Complete |
 | TUN-03 | Phase 8 | Complete |
@@ -183,9 +183,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 - v1.1 requirements: 45 total
 - Mapped to phases: 45
 - Unmapped: 0
-- Complete: 42
-- Pending: 3 (Phase 10: AGT-01, AGT-05, AGT-06)
-- GPU-path correctness (Phase 11): TUN-04, TUN-06, INT-03, AGT-08
+- Complete: 43
+- Pending: 2 (Phase 12: RTE-05, RTE-07)
 
 ---
 *Requirements defined: 2026-03-07*
