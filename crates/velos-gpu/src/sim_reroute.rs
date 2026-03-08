@@ -18,7 +18,7 @@ use crate::sim::SimWorld;
 /// Reroute subsystem state, owned by SimWorld.
 ///
 /// Extracted to a struct to keep SimWorld field count manageable.
-pub(crate) struct RerouteState {
+pub struct RerouteState {
     /// Staggered scheduler processing 1K agents/step.
     pub scheduler: RerouteScheduler,
     /// CCH router for alternative path queries.
@@ -118,7 +118,7 @@ impl SimWorld {
     /// Gathers edge flow and capacity data from the road graph and current
     /// agent positions, then calls PredictionService::update() which
     /// atomically swaps the overlay for next-frame reroute reads.
-    pub(crate) fn step_prediction(&mut self) {
+    pub fn step_prediction(&mut self) {
         use petgraph::graph::EdgeIndex;
         use petgraph::visit::EdgeRef;
         use velos_core::components::{Kinematics, RoadPosition};

@@ -126,7 +126,7 @@ impl SimWorld {
     }
 
     /// Apply a new lane change: attach LaneChangeState and LateralOffset to entity.
-    pub(crate) fn start_lane_change(&mut self, entity: Entity, target_lane: u8, started_at: f64) {
+    pub fn start_lane_change(&mut self, entity: Entity, target_lane: u8, started_at: f64) {
         let current_lane = self
             .world
             .query_one_mut::<&RoadPosition>(entity)
@@ -233,7 +233,7 @@ impl SimWorld {
     ///   2. Evaluate MOBIL for adjacent lanes
     ///   3. Start lane change if accepted
     /// Then process ongoing drift for all cars with active LaneChangeState.
-    pub(crate) fn step_lane_changes(&mut self, dt: f64) {
+    pub fn step_lane_changes(&mut self, dt: f64) {
         use velos_vehicle::idm::idm_acceleration;
 
         // Collect car agents for evaluation

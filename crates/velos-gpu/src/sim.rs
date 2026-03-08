@@ -124,7 +124,7 @@ pub struct SimWorld {
     /// Partition mode: Single (default) or Multi for logical multi-GPU partitions.
     pub partition_mode: PartitionMode,
     /// Reroute evaluation subsystem state.
-    pub(crate) reroute: RerouteState,
+    pub reroute: RerouteState,
     /// GPU perception pipeline. None in CPU-only test paths.
     pub(crate) perception: Option<PerceptionPipeline>,
     /// Loaded vehicle configuration (used at startup, retained for runtime queries).

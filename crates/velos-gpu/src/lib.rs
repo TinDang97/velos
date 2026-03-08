@@ -14,7 +14,7 @@ pub mod partition;
 pub mod renderer;
 pub mod sim;
 pub mod sim_startup;
-mod cpu_reference;
+pub mod cpu_reference;
 mod sim_helpers;
 mod sim_mobil;
 mod sim_lifecycle;
