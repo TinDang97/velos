@@ -107,6 +107,12 @@ const FLAG_BUS_DWELLING: u32 = 1u;
 const FLAG_EMERGENCY_ACTIVE: u32 = 2u;
 const FLAG_YIELDING: u32 = 4u;
 
+// Motorbike sublane filtering: lateral distance threshold (metres).
+// If a motorbike's lateral offset differs from its leader by >= this value,
+// the motorbike treats the leader as absent and uses free-flow speed.
+// Matches CPU sublane model threshold in cpu_reference.rs.
+const MOTORBIKE_LATERAL_CLEARANCE: f32 = 0.8;
+
 // Emergency vehicle data for yield cone detection (max 16 active)
 struct EmergencyVehicle {
     pos_x: f32,
@@ -474,6 +480,20 @@ fn wave_front_update(
             let own_pos_f32 = fixpos_to_f32(agent.position);
             gap = max(leader_pos_f32 - own_pos_f32, 0.0);
             delta_v = own_speed_f32 - leader_speed_f32;
+
+            // Motorbike sublane filtering: if this motorbike has sufficient lateral
+            // clearance from the leader, treat leader as absent (free-flow).
+            // This lets motorbikes filter past cars/buses without queuing behind them.
+            if agent.vehicle_type == VT_MOTORBIKE {
+                let own_lat = f32(agent.lateral) / 256.0;    // Q8.8 → metres
+                let leader_lat = f32(leader.lateral) / 256.0;
+                let lateral_dist = abs(own_lat - leader_lat);
+                if lateral_dist >= MOTORBIKE_LATERAL_CLEARANCE {
+                    gap = 1000.0;
+                    delta_v = 0.0;
+                    leader_speed_f32 = own_speed_f32;
+                }
+            }
         }
 
         // Bus dwelling guard: skip all physics for dwelling buses.

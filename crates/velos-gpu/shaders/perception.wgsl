@@ -85,7 +85,12 @@ const FLAG_EMERGENCY_NEARBY: u32 = 2u;
 const FLAG_EMERGENCY_ACTIVE: u32 = 2u;
 
 // Vehicle type constants
+const VT_MOTORBIKE: u32 = 0u;
 const VT_EMERGENCY: u32 = 5u;
+
+// Motorbike sublane filtering: lateral distance threshold (metres).
+// Matches MOTORBIKE_LATERAL_CLEARANCE in wave_front.wgsl.
+const MOTORBIKE_LATERAL_CLEARANCE: f32 = 0.8;
 
 // ============================================================
 // Bindings (SEPARATE bind group from wave_front)
@@ -131,6 +136,18 @@ fn perception_gather(@builtin(global_invocation_id) gid: vec3<u32>) {
         if other.edge_id != own_edge || other.lane_idx != own_lane {
             continue;
         }
+
+        // Motorbike sublane filtering: skip leaders with sufficient lateral clearance.
+        // A motorbike that has drifted laterally past a car should not perceive it as a leader.
+        if agent.vehicle_type == VT_MOTORBIKE {
+            let own_lat = f32(agent.lateral) / 256.0;    // Q8.8 → metres
+            let other_lat = f32(other.lateral) / 256.0;
+            let lateral_dist = abs(own_lat - other_lat);
+            if lateral_dist >= MOTORBIKE_LATERAL_CLEARANCE {
+                continue;
+            }
+        }
+
         let other_pos = fixpos_to_f32(other.position);
         let gap = other_pos - own_pos_f32;
         if gap > 0.0 && gap < best_leader_gap {
