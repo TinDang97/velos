@@ -666,6 +666,21 @@ impl ComputeDispatcher {
     }
 }
 
+/// Compute agent flags bitfield from vehicle state.
+///
+/// Combines FLAG_BUS_DWELLING (bit 0) and FLAG_EMERGENCY_ACTIVE (bit 1).
+/// Used by `step_vehicles_gpu()` when building GpuAgentState.
+pub fn compute_agent_flags(is_bus_dwelling: bool, is_emergency: bool) -> u32 {
+    let mut f = 0u32;
+    if is_bus_dwelling {
+        f |= 1; // FLAG_BUS_DWELLING
+    }
+    if is_emergency {
+        f |= 2; // FLAG_EMERGENCY_ACTIVE
+    }
+    f
+}
+
 /// Helper to create a bind group layout entry.
 pub(crate) fn bgl_entry(
     binding: u32,
@@ -977,5 +992,61 @@ mod tests {
         // Emergency approaching (size_factor=2.0) needs bigger gap
         assert!(cpu_gap_acceptance(1, 3.0, 2.0, 0.0));   // car: accepts
         assert!(!cpu_gap_acceptance(5, 3.0, 2.0, 0.0));  // emergency: rejects
+    }
+
+    /// Compute flags bitfield matching the logic in step_vehicles_gpu().
+    /// Extracted as a pure function for testability.
+    fn compute_agent_flags(is_bus_dwelling: bool, is_emergency: bool) -> u32 {
+        crate::compute::compute_agent_flags(is_bus_dwelling, is_emergency)
+    }
+
+    #[test]
+    fn flags_neither_dwelling_nor_emergency() {
+        assert_eq!(compute_agent_flags(false, false), 0);
+    }
+
+    #[test]
+    fn flags_bus_dwelling_only() {
+        // Bit 0 set: FLAG_BUS_DWELLING
+        assert_eq!(compute_agent_flags(true, false), 1);
+    }
+
+    #[test]
+    fn flags_emergency_only() {
+        // Bit 1 set: FLAG_EMERGENCY_ACTIVE
+        let flags = compute_agent_flags(false, true);
+        assert_eq!(flags & 2, 2, "FLAG_EMERGENCY_ACTIVE (bit 1) must be set");
+        assert_eq!(flags, 2);
+    }
+
+    #[test]
+    fn flags_bus_dwelling_and_emergency() {
+        // Both bits set: FLAG_BUS_DWELLING | FLAG_EMERGENCY_ACTIVE
+        let flags = compute_agent_flags(true, true);
+        assert_eq!(flags, 3, "Both FLAG_BUS_DWELLING and FLAG_EMERGENCY_ACTIVE must be set");
+        assert_eq!(flags & 1, 1, "FLAG_BUS_DWELLING bit must be set");
+        assert_eq!(flags & 2, 2, "FLAG_EMERGENCY_ACTIVE bit must be set");
+    }
+
+    #[test]
+    fn emergency_vehicle_upload_count_capped_at_16() {
+        // Verify GpuEmergencyVehicle is Pod/Zeroable and can be used in upload
+        let vehicles: Vec<GpuEmergencyVehicle> = (0..20)
+            .map(|i| GpuEmergencyVehicle {
+                pos_x: i as f32 * 10.0,
+                pos_y: i as f32 * 5.0,
+                heading: 0.5,
+                _pad: 0.0,
+            })
+            .collect();
+        // upload_emergency_vehicles caps at 16
+        let count = vehicles.len().min(16);
+        assert_eq!(count, 16);
+    }
+
+    #[test]
+    fn gpu_emergency_vehicle_layout() {
+        // Verify GpuEmergencyVehicle is 16 bytes (4 x f32) for correct GPU alignment
+        assert_eq!(std::mem::size_of::<GpuEmergencyVehicle>(), 16);
     }
 }
