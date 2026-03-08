@@ -232,6 +232,7 @@ impl SimWorld {
     ///   1. Compute current IDM acceleration
     ///   2. Evaluate MOBIL for adjacent lanes
     ///   3. Start lane change if accepted
+    ///
     /// Then process ongoing drift for all cars with active LaneChangeState.
     pub fn step_lane_changes(&mut self, dt: f64) {
         use velos_vehicle::idm::idm_acceleration;

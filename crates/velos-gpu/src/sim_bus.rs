@@ -70,13 +70,12 @@ impl SimWorld {
         // Apply begin_dwell for buses that reached their stop.
         let model = self.bus_dwell_model;
         for action in &actions {
-            if action.should_begin {
-                if let Ok(bus_state) = self
+            if action.should_begin
+                && let Ok(bus_state) = self
                     .world
                     .query_one_mut::<&mut BusState>(action.entity)
-                {
-                    bus_state.begin_dwell(&model, action.boarding, action.alighting);
-                }
+            {
+                bus_state.begin_dwell(&model, action.boarding, action.alighting);
             }
         }
 

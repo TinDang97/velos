@@ -10,20 +10,14 @@
 
 use std::collections::HashMap;
 
-use hecs::{Entity, World};
+use hecs::World;
 use petgraph::graph::{EdgeIndex, NodeIndex};
 use rand::rngs::StdRng;
 use rand::SeedableRng;
 
-use velos_core::components::{
-    CarFollowingModel, GpuAgentState, Kinematics, LateralOffset, Position, RoadPosition,
-    VehicleType,
-};
-use velos_core::fixed_point::{FixLat, FixPos, FixSpd};
 use velos_demand::{OdMatrix, Spawner, TodProfile, Zone};
 use velos_net::{RoadGraph, SpatialIndex};
-use velos_signal::detector::{DetectorReading, LoopDetector};
-use velos_signal::priority::{PriorityLevel, PriorityRequest};
+use velos_signal::detector::LoopDetector;
 use velos_signal::SignalController;
 use velos_meso::queue_model::SpatialQueue;
 use velos_meso::zone_config::ZoneConfig;
@@ -36,7 +30,7 @@ use velos_vehicle::sublane::SublaneParams;
 use crate::ped_adaptive::PedestrianAdaptivePipeline;
 use crate::sim_meso::MesoAgentState;
 
-use crate::compute::{sort_agents_by_lane, ComputeDispatcher};
+use crate::compute::ComputeDispatcher;
 use crate::multi_gpu::MultiGpuScheduler;
 use crate::partition::partition_network;
 use crate::perception::PerceptionPipeline;
@@ -385,22 +379,23 @@ impl SimWorld {
 
     /// Run one simulation tick using GPU wave-front dispatch for vehicle physics.
     ///
-    /// Full pipeline:
-    /// 1. spawn_agents       — create new agents from demand
-    /// 2. update_loop_detectors — feed actuated signals
-    /// 3. step_signals_with_detectors — advance signal controllers
-    /// 4. step_signal_priority — process bus/emergency priority requests
-    /// 4.5. step_glosa        — GLOSA advisory speed for non-green signals
-    /// 5. step_perception     — GPU perception gather + readback
-    /// 6. step_reroute        — evaluate rerouting from perception results
-    /// 6.5. step_meso         — mesoscopic queue tick + buffer zone insertion
-    /// 6.7. step_lane_changes — MOBIL evaluation + lateral drift (CPU, cars)
-    /// 7. step_vehicles_gpu   — GPU wave-front car-following physics
-    /// 7.5. step_motorbikes_sublane — lateral filtering (CPU, motorbikes)
-    /// 8. step_bus_dwell      — bus dwell lifecycle
-    /// 8.5. step_prediction   — prediction overlay refresh (every 60 sim-seconds)
-    /// 9. step_pedestrians    — CPU social force model
-    /// 10. detect_gridlock + remove + metrics
+    /// Full pipeline (step numbers denote ordering, not a Markdown list):
+    ///
+    /// - 1 spawn_agents -- create new agents from demand
+    /// - 2 update_loop_detectors -- feed actuated signals
+    /// - 3 step_signals_with_detectors -- advance signal controllers
+    /// - 4 step_signal_priority -- process bus/emergency priority requests
+    /// - 4.5 step_glosa -- GLOSA advisory speed for non-green signals
+    /// - 5 step_perception -- GPU perception gather + readback
+    /// - 6 step_reroute -- evaluate rerouting from perception results
+    /// - 6.5 step_meso -- mesoscopic queue tick + buffer zone insertion
+    /// - 6.7 step_lane_changes -- MOBIL evaluation + lateral drift (CPU, cars)
+    /// - 7 step_vehicles_gpu -- GPU wave-front car-following physics
+    /// - 7.5 step_motorbikes_sublane -- lateral filtering (CPU, motorbikes)
+    /// - 8 step_bus_dwell -- bus dwell lifecycle
+    /// - 8.5 step_prediction -- prediction overlay refresh (every 60 sim-seconds)
+    /// - 9 step_pedestrians -- CPU social force model
+    /// - 10 detect_gridlock + remove + metrics
     pub fn tick_gpu(
         &mut self,
         base_dt: f64,
@@ -528,293 +523,13 @@ impl SimWorld {
         self.build_instances()
     }
 
-    /// Advance signal controllers with detector readings from loop detectors.
-    ///
-    /// Each controller receives only the readings from its own intersection's
-    /// detectors. Fixed-time controllers ignore readings; actuated controllers
-    /// use them for gap-out decisions.
-    pub(crate) fn step_signals_with_detectors(
-        &mut self,
-        dt: f64,
-        detector_readings: &[(NodeIndex, Vec<DetectorReading>)],
-    ) {
-        for (node, ctrl) in &mut self.signal_controllers {
-            let old_phase = ctrl.get_phase_state(0);
-            let readings = detector_readings
-                .iter()
-                .find(|(n, _)| n == node)
-                .map_or(&[][..], |(_, r)| r.as_slice());
-            ctrl.tick(dt, readings);
-            let new_phase = ctrl.get_phase_state(0);
-            if old_phase != new_phase {
-                self.signal_dirty = true;
-            }
-        }
-    }
-
-    /// Check loop detectors for agent crossings.
-    ///
-    /// For each detector, scans agents on the same edge and checks if any
-    /// agent's offset crossed the detector point this frame. Uses current
-    /// ECS positions (RoadPosition.offset_m) compared against the previous
-    /// frame's position stored in Kinematics.speed * dt approximation.
-    fn update_loop_detectors(&self) -> Vec<(NodeIndex, Vec<DetectorReading>)> {
-        let mut results = Vec::with_capacity(self.loop_detectors.len());
-
-        for (node, detectors) in &self.loop_detectors {
-            let mut readings = Vec::with_capacity(detectors.len());
-
-            for (det_idx, detector) in detectors.iter().enumerate() {
-                let mut triggered = false;
-
-                // Scan agents on this detector's edge
-                for (rp, kin) in self
-                    .world
-                    .query::<(&RoadPosition, &Kinematics)>()
-                    .iter()
-                {
-                    if rp.edge_index != detector.edge_id {
-                        continue;
-                    }
-
-                    // Approximate previous position: current offset minus distance
-                    // traveled this frame. For forward-only detection this is
-                    // sufficient (LoopDetector::check uses prev < offset <= cur).
-                    let cur_pos = rp.offset_m;
-                    // Use a small dt estimate; the exact dt doesn't matter much
-                    // since we only need to know if the agent crossed the point.
-                    // Speed * 1 tick at base dt gives a conservative estimate.
-                    let prev_pos = (cur_pos - kin.speed.abs() * 0.1).max(0.0);
-
-                    if detector.check(prev_pos, cur_pos) {
-                        triggered = true;
-                        break; // One trigger per detector per frame is sufficient
-                    }
-                }
-
-                readings.push(DetectorReading {
-                    detector_index: det_idx,
-                    triggered,
-                });
-            }
-
-            results.push((*node, readings));
-        }
-
-        results
-    }
-
-    /// Process signal priority requests from bus and emergency vehicles.
-    ///
-    /// Scans vehicles near signalized intersections (within 100m of the
-    /// intersection node) and submits priority requests for bus and
-    /// emergency vehicle types.
-    fn step_signal_priority(&mut self) {
-        // Collect priority requests (avoid borrow conflict with self)
-        let mut requests: Vec<(NodeIndex, PriorityRequest)> = Vec::new();
-
-        let g = self.road_graph.inner();
-
-        for (entity, rp, vtype) in self
-            .world
-            .query::<(hecs::Entity, &RoadPosition, &VehicleType)>()
-            .iter()
-        {
-            let level = match *vtype {
-                VehicleType::Bus => PriorityLevel::Bus,
-                VehicleType::Emergency => PriorityLevel::Emergency,
-                _ => continue,
-            };
-
-            // Check if agent's edge connects to a signalized node
-            let edge_idx = EdgeIndex::new(rp.edge_index as usize);
-            let Some(endpoints) = g.edge_endpoints(edge_idx) else {
-                continue;
-            };
-            let target_node = endpoints.1;
-            let target_id = target_node.index() as u32;
-
-            if !self.signalized_nodes.contains_key(&target_id) {
-                continue;
-            }
-
-            // Check proximity: agent must be within 100m of intersection
-            let edge_length = g
-                .edge_weight(edge_idx)
-                .map(|e| e.length_m)
-                .unwrap_or(100.0);
-            let distance_to_intersection = edge_length - rp.offset_m;
-            if distance_to_intersection > 100.0 {
-                continue;
-            }
-
-            // Determine approach index for this edge
-            let incoming: Vec<_> = g
-                .edges_directed(target_node, petgraph::Direction::Incoming)
-                .collect();
-            let approach_index = incoming
-                .iter()
-                .position(|e| {
-                    use petgraph::visit::EdgeRef;
-                    e.id() == edge_idx
-                })
-                .unwrap_or(0);
-
-            requests.push((
-                target_node,
-                PriorityRequest {
-                    approach_index,
-                    level,
-                    vehicle_id: entity.id(),
-                },
-            ));
-        }
-
-        // Submit requests to the matching signal controllers
-        for (target_node, request) in &requests {
-            for (ctrl_node, ctrl) in &mut self.signal_controllers {
-                if ctrl_node == target_node {
-                    ctrl.request_priority(request);
-                    break;
-                }
-            }
-        }
-    }
-
-    /// GPU wave-front dispatch for vehicle physics (cars + motorbikes).
-    fn step_vehicles_gpu(
-        &mut self,
-        dt: f32,
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
-        dispatcher: &mut ComputeDispatcher,
-    ) {
-        use crate::compute::{compute_agent_flags, GpuEmergencyVehicle};
-        use velos_core::cost::AgentProfile;
-
-        let mut gpu_agents: Vec<GpuAgentState> = Vec::new();
-        let mut entity_map: Vec<Entity> = Vec::new();
-        let mut emergency_list: Vec<GpuEmergencyVehicle> = Vec::new();
-
-        for (entity, rp, kin, vtype, lat, cf_model, bus_state, pos, agent_profile) in self
-            .world
-            .query_mut::<(
-                Entity,
-                &RoadPosition,
-                &Kinematics,
-                &VehicleType,
-                Option<&LateralOffset>,
-                Option<&CarFollowingModel>,
-                Option<&velos_vehicle::bus::BusState>,
-                &Position,
-                Option<&AgentProfile>,
-            )>()
-            .into_iter()
-        {
-            if *vtype == VehicleType::Pedestrian {
-                continue;
-            }
-
-            let cf = cf_model.copied().unwrap_or(CarFollowingModel::Idm);
-            let rng_seed = entity.id();
-            let profile = agent_profile.copied().unwrap_or(AgentProfile::Commuter);
-
-            let vtype_gpu = match *vtype {
-                VehicleType::Motorbike => 0,
-                VehicleType::Car => 1,
-                VehicleType::Bus => 2,
-                VehicleType::Bicycle => 3,
-                VehicleType::Truck => 4,
-                VehicleType::Emergency => 5,
-                VehicleType::Pedestrian => 6,
-            };
-
-            let is_dwelling = bus_state.map_or(false, |bs| bs.is_dwelling());
-            let is_emergency = *vtype == VehicleType::Emergency;
-
-            gpu_agents.push(GpuAgentState {
-                edge_id: rp.edge_index,
-                lane_idx: rp.lane as u32,
-                position: FixPos::from_f64(rp.offset_m).raw(),
-                lateral: FixLat::from_f64(lat.map_or(0.0, |l| l.lateral_offset)).raw(),
-                speed: FixSpd::from_f64(kin.speed).raw(),
-                acceleration: 0,
-                cf_model: cf as u32,
-                rng_state: rng_seed,
-                vehicle_type: vtype_gpu,
-                flags: compute_agent_flags(is_dwelling, is_emergency, profile),
-            });
-            entity_map.push(entity);
-
-            // Collect emergency vehicle world positions for yield cone buffer.
-            if is_emergency {
-                emergency_list.push(GpuEmergencyVehicle {
-                    pos_x: pos.x as f32,
-                    pos_y: pos.y as f32,
-                    heading: kin.heading as f32,
-                    _pad: 0.0,
-                });
-            }
-        }
-
-        if gpu_agents.is_empty() {
-            // Still upload empty emergency list to reset count to 0.
-            dispatcher.upload_emergency_vehicles(queue, &emergency_list);
-            return;
-        }
-
-        // Upload emergency vehicle positions for GPU yield cone detection.
-        dispatcher.upload_emergency_vehicles(queue, &emergency_list);
-
-        let (lane_offsets, lane_counts, lane_agent_indices) = sort_agents_by_lane(&gpu_agents);
-
-        dispatcher.upload_wave_front_data(
-            device,
-            queue,
-            &gpu_agents,
-            &lane_offsets,
-            &lane_counts,
-            &lane_agent_indices,
-        );
-
-        let mut encoder = device.create_command_encoder(&Default::default());
-        dispatcher.dispatch_wave_front(&mut encoder, device, queue, dt);
-        queue.submit(std::iter::once(encoder.finish()));
-
-        let updated = dispatcher.readback_wave_front_agents(device, queue);
-
-        for (i, gpu_state) in updated.iter().enumerate() {
-            if i >= entity_map.len() {
-                break;
-            }
-            let entity = entity_map[i];
-
-            let new_offset = FixPos::from_raw(gpu_state.position).to_f64();
-            let new_speed = FixSpd::from_raw(gpu_state.speed).to_f64();
-
-            let at_red = {
-                let Ok(rp) = self.world.query_one_mut::<&RoadPosition>(entity) else {
-                    continue;
-                };
-                let rp_copy = *rp;
-                self.check_signal_red(&rp_copy)
-            };
-            self.apply_vehicle_update(entity, new_speed, new_offset, at_red);
-
-            if let Ok(lat) = self.world.query_one_mut::<&mut LateralOffset>(entity) {
-                let new_lateral = FixLat::from_raw(gpu_state.lateral).to_f64();
-                lat.lateral_offset = new_lateral;
-                lat.desired_lateral = new_lateral;
-                self.apply_lateral_world_offset(entity, new_lateral);
-            }
-        }
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use velos_core::components::{Kinematics, LaneChangeState, Position, Route, WaitState};
+    use hecs::Entity;
+    use velos_core::components::{Kinematics, LaneChangeState, LateralOffset, Position, RoadPosition, Route, VehicleType, WaitState};
     use velos_vehicle::idm::IdmParams;
 
     fn make_2lane_graph() -> RoadGraph {
