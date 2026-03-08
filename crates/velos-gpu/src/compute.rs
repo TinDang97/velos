@@ -18,21 +18,22 @@ use crate::buffers::BufferPool;
 
 /// Per-vehicle-type parameters for GPU shader uniform buffer.
 ///
-/// Layout: 7 vehicle types x 8 f32 parameters = 224 bytes.
-/// Each row: `[v0, s0, t_headway, a, b, krauss_accel, krauss_decel, krauss_sigma]`
+/// Layout: 7 vehicle types x 12 f32 parameters = 336 bytes.
+/// Each row: `[v0, s0, t_headway, a, b, krauss_accel, krauss_decel, krauss_sigma,
+///             creep_max_speed, creep_distance_scale, creep_min_distance, gap_acceptance_ttc]`
 ///
 /// Indexed by `vehicle_type` (u32): 0=Motorbike, 1=Car, 2=Bus, 3=Bicycle,
 /// 4=Truck, 5=Emergency, 6=Pedestrian.
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct GpuVehicleParams {
-    pub params: [[f32; 8]; 7],
+    pub params: [[f32; 12]; 7],
 }
 
 impl GpuVehicleParams {
     /// Convert a [`VehicleConfig`] to GPU-ready parameter buffer.
     ///
-    /// Maps each vehicle type's IDM + Krauss parameters to the 8-float row.
+    /// Maps each vehicle type's IDM + Krauss + creep/gap parameters to the 12-float row.
     /// Pedestrian uses `desired_speed` for v0, `personal_space` for s0,
     /// and zeroes for car-following params (pedestrians use social force).
     pub fn from_config(config: &VehicleConfig) -> Self {
@@ -45,7 +46,7 @@ impl GpuVehicleParams {
             &config.emergency,
         ];
 
-        let mut params = [[0.0_f32; 8]; 7];
+        let mut params = [[0.0_f32; 12]; 7];
 
         for (i, vt) in vehicle_types.iter().enumerate() {
             params[i] = [
@@ -57,6 +58,10 @@ impl GpuVehicleParams {
                 vt.krauss_accel as f32,
                 vt.krauss_decel as f32,
                 vt.krauss_sigma as f32,
+                vt.creep_max_speed as f32,
+                vt.creep_distance_scale as f32,
+                0.5_f32, // creep_min_distance (constant across types)
+                vt.gap_acceptance_ttc as f32,
             ];
         }
 
@@ -71,6 +76,10 @@ impl GpuVehicleParams {
             1.0,                       // krauss_accel (not used)
             3.0,                       // krauss_decel (not used)
             0.0,                       // krauss_sigma (not used)
+            0.0,                       // creep_max_speed (pedestrians don't creep)
+            5.0,                       // creep_distance_scale (default)
+            0.5,                       // creep_min_distance (constant)
+            ped.gap_acceptance_ttc as f32,
         ];
 
         Self { params }
@@ -257,7 +266,7 @@ impl ComputeDispatcher {
             mapped_at_creation: false,
         });
 
-        // Vehicle params uniform buffer: 7 types * 8 f32 = 224 bytes.
+        // Vehicle params uniform buffer: 7 types * 12 f32 = 336 bytes.
         // Must be populated via upload_vehicle_params() before first dispatch.
         let vehicle_params_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("wf_vehicle_params"),
@@ -890,16 +899,23 @@ mod tests {
     }
 
     /// CPU reference for red_light_creep_speed to verify GPU behavior matches.
-    /// Mirrors the WGSL function exactly.
+    /// Mirrors the WGSL function exactly (now reads from uniform buffer params).
     fn cpu_red_light_creep_speed(distance_to_stop: f32, vehicle_type: u32) -> f32 {
-        // Only motorbikes (0) and bicycles (3) creep
-        if vehicle_type != 0 && vehicle_type != 3 {
+        let config = VehicleConfig::default();
+        let gpu = GpuVehicleParams::from_config(&config);
+        let vtp = &gpu.params[vehicle_type as usize];
+        let creep_max = vtp[8];
+        let creep_scale = vtp[9];
+        let creep_min_dist = vtp[10];
+
+        // Early-exit for non-creeping vehicles (creep_max_speed == 0.0)
+        if creep_max == 0.0 {
             return 0.0;
         }
-        if distance_to_stop < 0.5 {
+        if distance_to_stop < creep_min_dist {
             return 0.0;
         }
-        0.3 * (distance_to_stop / 5.0).min(1.0)
+        creep_max * (distance_to_stop / creep_scale).min(1.0)
     }
 
     #[test]

@@ -135,14 +135,18 @@ struct GpuSign {
 // Per-vehicle-type parameters (matches Rust GpuVehicleParams layout)
 // Indexed by vehicle_type: 0=Motorbike..6=Pedestrian
 struct VehicleTypeParams {
-    v0: f32,            // desired free-flow speed (m/s)
-    s0: f32,            // minimum gap at standstill (m)
-    t_headway: f32,     // desired time headway (s)
-    a: f32,             // IDM max acceleration (m/s^2)
-    b: f32,             // IDM comfortable deceleration (m/s^2)
-    krauss_accel: f32,  // Krauss max acceleration (m/s^2)
-    krauss_decel: f32,  // Krauss max deceleration (m/s^2)
-    krauss_sigma: f32,  // Krauss driver imperfection [0, 1]
+    v0: f32,                  // desired free-flow speed (m/s)
+    s0: f32,                  // minimum gap at standstill (m)
+    t_headway: f32,           // desired time headway (s)
+    a: f32,                   // IDM max acceleration (m/s^2)
+    b: f32,                   // IDM comfortable deceleration (m/s^2)
+    krauss_accel: f32,        // Krauss max acceleration (m/s^2)
+    krauss_decel: f32,        // Krauss max deceleration (m/s^2)
+    krauss_sigma: f32,        // Krauss driver imperfection [0, 1]
+    creep_max_speed: f32,     // max red-light creep speed (m/s), 0.0 = no creep
+    creep_distance_scale: f32, // distance over which creep ramps to max (m)
+    creep_min_distance: f32,  // minimum distance to stop line for creep (m)
+    gap_acceptance_ttc: f32,  // gap acceptance time-to-collision threshold (s)
 }
 
 @group(0) @binding(7) var<uniform> vehicle_params: array<VehicleTypeParams, 7>;
@@ -360,23 +364,22 @@ fn handle_sign_interaction(agent: ptr<function, AgentState>, desired_speed: f32)
 // HCMC behavior: red-light creep (matches CPU sublane.rs)
 // ============================================================
 
-// Only motorbikes and bicycles creep forward at red lights.
-// Creep speed ramps linearly with distance to stop line, capped at 0.3 m/s.
-const CREEP_MAX_SPEED: f32 = 0.3;
-const CREEP_DISTANCE_SCALE: f32 = 5.0;
-const CREEP_MIN_DISTANCE: f32 = 0.5;
+// Creep parameters now read from vehicle_params uniform buffer per vehicle type.
+// Non-creeping vehicles have creep_max_speed == 0.0 (early-exit).
 
 fn red_light_creep_speed(distance_to_stop: f32, vehicle_type: u32) -> f32 {
-    // Only motorbikes and bicycles creep
-    if vehicle_type != VT_MOTORBIKE && vehicle_type != VT_BICYCLE {
+    let vtp = vehicle_params[vehicle_type];
+
+    // Early-exit for non-creeping vehicles (car, bus, truck, emergency, pedestrian)
+    if vtp.creep_max_speed == 0.0 {
         return 0.0;
     }
     // Too close to stop line — already at front of swarm
-    if distance_to_stop < CREEP_MIN_DISTANCE {
+    if distance_to_stop < vtp.creep_min_distance {
         return 0.0;
     }
-    let ramp = min(distance_to_stop / CREEP_DISTANCE_SCALE, 1.0);
-    return CREEP_MAX_SPEED * ramp;
+    let ramp = min(distance_to_stop / vtp.creep_distance_scale, 1.0);
+    return vtp.creep_max_speed * ramp;
 }
 
 // ============================================================
@@ -384,9 +387,8 @@ fn red_light_creep_speed(distance_to_stop: f32, vehicle_type: u32) -> f32 {
 // ============================================================
 
 // Size intimidation: larger approaching vehicles increase required TTC gap.
-const GAP_MAX_WAIT_TIME: f32 = 5.0;
-const GAP_FORCED_ACCEPTANCE_FACTOR: f32 = 0.5;
-const GAP_WAIT_REDUCTION_RATE: f32 = 0.1;
+// Gap wait/forced-acceptance/reduction-rate are universal physics constants
+// (not vehicle-type-specific), kept as local `let` inside intersection_gap_acceptance().
 
 fn size_factor(approaching_type: u32) -> f32 {
     switch approaching_type {
@@ -403,12 +405,17 @@ fn size_factor(approaching_type: u32) -> f32 {
 fn intersection_gap_acceptance(
     other_type: u32, ttc: f32, ttc_threshold: f32, wait_time: f32,
 ) -> bool {
+    // Universal physics constants (not vehicle-type-specific)
+    let gap_max_wait_time = 5.0;
+    let gap_forced_acceptance_factor = 0.5;
+    let gap_wait_reduction_rate = 0.1;
+
     let sf = size_factor(other_type);
     var wait_mod: f32;
-    if wait_time >= GAP_MAX_WAIT_TIME {
-        wait_mod = GAP_FORCED_ACCEPTANCE_FACTOR;
+    if wait_time >= gap_max_wait_time {
+        wait_mod = gap_forced_acceptance_factor;
     } else {
-        wait_mod = 1.0 - GAP_WAIT_REDUCTION_RATE * min(wait_time, GAP_MAX_WAIT_TIME);
+        wait_mod = 1.0 - gap_wait_reduction_rate * min(wait_time, gap_max_wait_time);
     }
     let effective = ttc_threshold * sf * wait_mod;
     return ttc > effective;
@@ -546,8 +553,8 @@ fn wave_front_update(
                 let closing_speed = max(own_speed_f32 - perc.leader_speed, 0.01);
                 let ttc = perc.leader_gap / closing_speed;
 
-                // Base TTC threshold from vehicle type headway (seconds)
-                let base_threshold = vehicle_params[vt].t_headway;
+                // Base TTC threshold from vehicle type gap acceptance config (seconds)
+                let base_threshold = vehicle_params[vt].gap_acceptance_ttc;
 
                 // Approximate wait_time: if nearly stopped, agent is waiting
                 // Use flags bit3 as wait accumulator indicator (0 = not waiting)

@@ -4,11 +4,11 @@ use velos_gpu::compute::GpuVehicleParams;
 use velos_vehicle::config::VehicleConfig;
 
 #[test]
-fn gpu_vehicle_params_size_is_224_bytes() {
+fn gpu_vehicle_params_size_is_336_bytes() {
     assert_eq!(
         std::mem::size_of::<GpuVehicleParams>(),
-        224,
-        "GpuVehicleParams must be 7 types * 8 f32 * 4 bytes = 224 bytes"
+        336,
+        "GpuVehicleParams must be 7 types * 12 f32 * 4 bytes = 336 bytes"
     );
 }
 
