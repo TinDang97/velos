@@ -174,7 +174,7 @@ Phases 5 through 8 execute sequentially. Each phase depends on the prior phase.
 | 10. Sim Loop Integration — Bus Dwell & Meso-Micro | 2/2 | Complete    | 2026-03-08 | - |
 | 11. GPU Buffer Wiring — Perception & Emergency | 2/2 | Complete    | 2026-03-08 | - |
 | 12. CPU Lane-Change, Prediction Loop & GPU Config | 2/2 | Complete    | 2026-03-08 | - |
-| 13. Final Integration Wiring & GPU Transfer Audit | 3/3 | Complete   | 2026-03-08 | - |
+| 13. Final Integration Wiring & GPU Transfer Audit | 3/3 | Complete    | 2026-03-08 | - |
 
 ### Phase 12: CPU Lane-Change, Prediction Loop & GPU Config
 **Goal**: MOBIL lane-change overtaking and motorbike lateral filtering wired into GPU tick loop, PredictionService::update() runs every 60 sim-seconds in the frame loop so prediction overlay refreshes live, and HCMC creep/gap behavior constants propagate from TOML config to GPU uniform buffer — closing the last 2 partial requirements and 2 integration gaps from the v1.1 audit
@@ -206,9 +206,9 @@ Plans:
   4. step_lane_changes(dt) is called in CPU tick() path — CPU and GPU tick have parity
   5. Signal buffer upload uses dirty flag — only transfers when signal phase changes (not every frame)
   6. Edge travel ratio buffer skips upload when prediction overlay hasn't updated
-  7. Unused congestion grid buffer and GpuAgentState acceleration field are removed
+  7. ~~Unused congestion grid buffer and GpuAgentState acceleration field are removed~~ (dropped: research confirmed both are actively used in GPU shaders)
 **Plans:** 3/3 plans complete
 Plans:
-- [ ] 13-01-PLAN.md — Profile encoding at spawn + GLOSA advisory speed wiring (INT-01, INT-02, SIG-03)
-- [ ] 13-02-PLAN.md — GPU pedestrian adaptive pipeline activation (AGT-04)
-- [ ] 13-03-PLAN.md — CPU tick parity + dirty-flag buffer upload optimization
+- [x] 13-01-PLAN.md — Profile encoding at spawn + GLOSA advisory speed wiring (INT-01, INT-02, SIG-03)
+- [x] 13-02-PLAN.md — GPU pedestrian adaptive pipeline activation (AGT-04)
+- [x] 13-03-PLAN.md — CPU tick parity + dirty-flag buffer upload optimization
