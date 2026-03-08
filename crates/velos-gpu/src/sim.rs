@@ -150,6 +150,10 @@ pub struct SimWorld {
     pub meso_agent_states: HashMap<u32, MesoAgentState>,
     /// GPU pedestrian adaptive pipeline. None in CPU-only test paths.
     pub(crate) ped_adaptive: Option<PedestrianAdaptivePipeline>,
+    /// True when signal controller phase changed since last GPU upload.
+    pub(crate) signal_dirty: bool,
+    /// True when prediction overlay was swapped since last GPU upload.
+    pub(crate) prediction_dirty: bool,
 }
 
 impl SimWorld {
@@ -247,6 +251,8 @@ impl SimWorld {
             meso_queues: HashMap::new(),
             meso_agent_states: HashMap::new(),
             ped_adaptive: Some(ped_adaptive),
+            signal_dirty: true,
+            prediction_dirty: true,
         };
 
         // Initialize reroute subsystem (builds CCH, prediction service).
@@ -303,6 +309,8 @@ impl SimWorld {
             meso_queues: HashMap::new(),
             meso_agent_states: HashMap::new(),
             ped_adaptive: None,
+            signal_dirty: true,
+            prediction_dirty: true,
         }
     }
 
@@ -513,17 +521,22 @@ impl SimWorld {
     /// Each controller receives only the readings from its own intersection's
     /// detectors. Fixed-time controllers ignore readings; actuated controllers
     /// use them for gap-out decisions.
-    fn step_signals_with_detectors(
+    pub(crate) fn step_signals_with_detectors(
         &mut self,
         dt: f64,
         detector_readings: &[(NodeIndex, Vec<DetectorReading>)],
     ) {
         for (node, ctrl) in &mut self.signal_controllers {
+            let old_phase = ctrl.get_phase_state(0);
             let readings = detector_readings
                 .iter()
                 .find(|(n, _)| n == node)
                 .map_or(&[][..], |(_, r)| r.as_slice());
             ctrl.tick(dt, readings);
+            let new_phase = ctrl.get_phase_state(0);
+            if old_phase != new_phase {
+                self.signal_dirty = true;
+            }
         }
     }
 

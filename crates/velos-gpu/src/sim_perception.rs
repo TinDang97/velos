@@ -87,10 +87,9 @@ impl SimWorld {
         queue: &wgpu::Queue,
         dispatcher: &ComputeDispatcher,
     ) -> Vec<PerceptionResult> {
-        let perception = match &self.perception {
-            Some(p) => p,
-            None => return Vec::new(),
-        };
+        if self.perception.is_none() {
+            return Vec::new();
+        }
 
         let agent_buffer = match dispatcher.agent_buffer() {
             Some(b) => b,
@@ -102,21 +101,22 @@ impl SimWorld {
             None => return Vec::new(),
         };
 
-        let perc_buffers = match &self.perception_buffers {
-            Some(b) => b,
-            None => return Vec::new(),
-        };
+        if self.perception_buffers.is_none() {
+            return Vec::new();
+        }
 
-        // Update signal state buffer from current signal controllers.
+        // Update dirty-flag-gated buffers before taking immutable borrows.
         self.update_signal_buffer(queue);
-
-        // Update edge travel ratio buffer from prediction overlay if available.
         self.update_edge_travel_ratio_buffer(queue);
 
         let agent_count = dispatcher.wave_front_agent_count;
         if agent_count == 0 {
             return Vec::new();
         }
+
+        // Now take immutable borrows for bind group creation.
+        let perception = self.perception.as_ref().unwrap();
+        let perc_buffers = self.perception_buffers.as_ref().unwrap();
 
         // The shared result buffer lives in ComputeDispatcher -- same buffer
         // that wave_front.wgsl reads at binding(8).
@@ -152,7 +152,12 @@ impl SimWorld {
     ///
     /// Iterates signal controllers, maps phase states to per-edge u32 values
     /// (0=green, 1=amber, 2=red). Edges without signals get 3 (none).
-    fn update_signal_buffer(&self, queue: &wgpu::Queue) {
+    /// Skips upload when signal_dirty is false (no phase transition since last upload).
+    fn update_signal_buffer(&mut self, queue: &wgpu::Queue) {
+        if !self.signal_dirty {
+            return;
+        }
+
         let perc_buffers = match &self.perception_buffers {
             Some(b) => b,
             None => return,
@@ -183,13 +188,20 @@ impl SimWorld {
             0,
             bytemuck::cast_slice(&signal_states),
         );
+
+        self.signal_dirty = false;
     }
 
     /// Write per-edge travel time ratios from prediction overlay.
     ///
     /// If prediction service is available, copies overlay travel times.
     /// Otherwise buffer stays zeroed (free-flow assumption).
-    fn update_edge_travel_ratio_buffer(&self, queue: &wgpu::Queue) {
+    /// Skips upload when prediction_dirty is false (overlay unchanged since last upload).
+    fn update_edge_travel_ratio_buffer(&mut self, queue: &wgpu::Queue) {
+        if !self.prediction_dirty {
+            return;
+        }
+
         let perc_buffers = match &self.perception_buffers {
             Some(b) => b,
             None => return,
@@ -209,6 +221,8 @@ impl SimWorld {
                 );
             }
         }
+
+        self.prediction_dirty = false;
     }
 }
 

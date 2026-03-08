@@ -186,6 +186,7 @@ impl SimWorld {
         };
 
         prediction_service.update(&input, self.sim_time);
+        self.prediction_dirty = true;
     }
 
     /// Run one reroute evaluation step: process a batch of agents.
