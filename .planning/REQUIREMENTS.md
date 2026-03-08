@@ -169,9 +169,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 | RTE-02 | Phase 7 | Complete |
 | RTE-03 | Phase 9 | Complete |
 | RTE-04 | Phase 7 | Complete |
-| RTE-05 | Phase 12 | Pending |
+| RTE-05 | Phase 12 | Complete |
 | RTE-06 | Phase 7 | Complete |
-| RTE-07 | Phase 12 | Pending |
+| RTE-07 | Phase 12 | Complete |
 | TUN-01 | Phase 8 | Complete |
 | TUN-02 | Phase 9 | Complete |
 | TUN-03 | Phase 8 | Complete |
@@ -183,9 +183,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 - v1.1 requirements: 45 total
 - Mapped to phases: 45
 - Unmapped: 0
-- Complete: 43
-- Pending: 2 (Phase 12: RTE-05, RTE-07)
+- Complete: 45
+- Pending: 0
 
 ---
 *Requirements defined: 2026-03-07*
-*Last updated: 2026-03-08 after gap closure phases 10-11 assigned*
+*Last updated: 2026-03-08 -- all 45 requirements complete*

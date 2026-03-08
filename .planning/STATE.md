@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: SUMO Replacement Engine
-status: in-progress
-stopped_at: Completed 12-01-PLAN.md
+status: complete
+stopped_at: Completed 12-02-PLAN.md
 last_updated: "2026-03-08T10:06:09Z"
-last_activity: 2026-03-08 -- Completed Plan 12-01 (GPU vehicle params extension)
+last_activity: 2026-03-08 -- Completed Plan 12-02 (MOBIL lane-change + sublane + prediction wiring)
 progress:
   total_phases: 9
   completed_phases: 7
   total_plans: 31
-  completed_plans: 30
-  percent: 96
+  completed_plans: 31
+  percent: 100
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-03-07)
 ## Current Position
 
 Phase: 12 of 12 (CPU Lane-Change & Sublane Wiring)
-Plan: 01 of 02 complete -- 01 (GPU vehicle params extension)
-Status: Phase 12 in progress
-Last activity: 2026-03-08 -- Completed Plan 12-01 (GPU vehicle params extension)
+Plan: 02 of 02 complete -- 02 (MOBIL lane-change + sublane + prediction wiring)
+Status: Phase 12 complete
+Last activity: 2026-03-08 -- Completed Plan 12-02 (MOBIL lane-change + sublane + prediction wiring)
 
-Progress: [█████████░] 96%
+Progress: [██████████] 100%
 
 ## Accumulated Context
 
@@ -144,6 +144,10 @@ Recent decisions affecting current work:
 - [Phase 11]: [11-01]: ComputeDispatcher owns shared perception buffer; PerceptionPipeline receives references via PerceptionBindings and readback_results parameter
 - [Phase 11]: [11-02]: compute_agent_flags() extracted as public pure function for testable flag bitfield computation
 - [12-01]: GpuVehicleParams extended from 8 to 12 floats per vehicle type (224->336 bytes): +creep_max_speed, creep_distance_scale, creep_min_distance, gap_acceptance_ttc
+- [12-02]: step_lane_changes at step 6.7 (before GPU physics) -- MOBIL decisions in ECS before GPU upload
+- [12-02]: step_motorbikes_sublane at step 7.5 (after GPU readback) -- needs updated positions for neighbor gaps
+- [12-02]: step_prediction at step 8.5 (after bus dwell) -- edge flows fresh from vehicle physics
+- [12-02]: Spatial index rebuilt post-GPU for sublane (snapshot_post + spatial_post) -- avoids stale gaps
 - [12-01]: GAP_MAX_WAIT_TIME/GAP_FORCED_ACCEPTANCE_FACTOR/GAP_WAIT_REDUCTION_RATE kept as local lets (universal physics, not vehicle-specific)
 - [12-01]: gap_acceptance_ttc replaces t_headway as base TTC threshold in WGSL intersection gap acceptance
 
@@ -165,6 +169,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-08T10:06:09Z
-Stopped at: Completed 12-01-PLAN.md (GPU vehicle params extension)
-Resume file: .planning/phases/12-cpu-lane-change-sublane-wiring-mobil-overtaking-and-motorbike-lateral-filtering-in-gpu-tick-loop/12-02-PLAN.md
+Last session: 2026-03-08T10:21:39Z
+Stopped at: Completed 12-02-PLAN.md (MOBIL lane-change + sublane + prediction wiring)
+Resume file: All plans complete

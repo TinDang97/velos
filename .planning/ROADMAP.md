@@ -26,7 +26,7 @@
 - [ ] **Phase 9: Sim Loop Integration — Startup & Frame Pipeline** - Wire all Phase 6-8 modules into sim.rs tick_gpu() and app.rs startup: perception, reroute, polymorphic signals, sign upload, vehicle params, HCMC behaviors
 - [x] **Phase 10: Sim Loop Integration — Bus Dwell & Meso-Micro Hybrid** - Wire bus dwell lifecycle and velos-meso crate into sim loop for peripheral zone transitions (completed 2026-03-08)
 - [x] **Phase 11: GPU Buffer Wiring — Perception & Emergency** - Wire perception result buffer to wave_front.wgsl binding(8) and emergency vehicle upload to sim loop tick (gap closure) (completed 2026-03-08)
-- [ ] **Phase 12: CPU Lane-Change, Prediction Loop & GPU Config** - MOBIL overtaking, motorbike lateral filtering in GPU tick loop, prediction overlay refresh, HCMC creep/gap params to GPU (includes gap closure)
+- [x] **Phase 12: CPU Lane-Change, Prediction Loop & GPU Config** - MOBIL overtaking, motorbike lateral filtering in GPU tick loop, prediction overlay refresh, HCMC creep/gap params to GPU (includes gap closure)
 
 ## Phase Details
 
@@ -172,7 +172,7 @@ Phases 5 through 8 execute sequentially. Each phase depends on the prior phase.
 | 9. Sim Loop Integration — Startup & Frame Pipeline | 2/3 | In Progress|  | - |
 | 10. Sim Loop Integration — Bus Dwell & Meso-Micro | 2/2 | Complete    | 2026-03-08 | - |
 | 11. GPU Buffer Wiring — Perception & Emergency | 2/2 | Complete    | 2026-03-08 | - |
-| 12. CPU Lane-Change, Prediction Loop & GPU Config | 1/2 | In Progress|  | - |
+| 12. CPU Lane-Change, Prediction Loop & GPU Config | 2/2 | Complete | 2026-03-08 | - |
 
 ### Phase 12: CPU Lane-Change, Prediction Loop & GPU Config
 **Goal**: MOBIL lane-change overtaking and motorbike lateral filtering wired into GPU tick loop, PredictionService::update() runs every 60 sim-seconds in the frame loop so prediction overlay refreshes live, and HCMC creep/gap behavior constants propagate from TOML config to GPU uniform buffer — closing the last 2 partial requirements and 2 integration gaps from the v1.1 audit
@@ -186,8 +186,8 @@ Phases 5 through 8 execute sequentially. Each phase depends on the prior phase.
   4. WGSL VehicleTypeParams struct matches the extended GpuVehicleParams — no hardcoded CREEP_MAX_SPEED or CREEP_DISTANCE_SCALE constants remain in wave_front.wgsl
   5. MOBIL lane-change decisions are evaluated and overtaking maneuvers execute in the GPU tick loop
   6. Motorbike lateral filtering (sublane squeeze-through) integrates with the lane-change pipeline
-**Plans:** 1/2 plans executed
+**Plans:** 2/2 plans complete
 
 Plans:
-- [ ] 12-01-PLAN.md — GPU uniform buffer extension (8->12 floats) + prediction loop wiring
-- [ ] 12-02-PLAN.md — MOBIL lane-change + motorbike sublane wiring into tick_gpu()
+- [x] 12-01-PLAN.md — GPU uniform buffer extension (8->12 floats) + prediction loop wiring
+- [x] 12-02-PLAN.md — MOBIL lane-change + motorbike sublane wiring into tick_gpu()
