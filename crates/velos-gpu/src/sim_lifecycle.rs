@@ -11,6 +11,7 @@ use velos_core::components::{
     WaitState,
 };
 use velos_demand::SpawnVehicleType;
+use velos_vehicle::bus::BusState;
 use velos_vehicle::gridlock::detect_cycles;
 use velos_vehicle::types::default_idm_params;
 
@@ -97,6 +98,21 @@ impl SimWorld {
         let jitter_y = self.rng.gen_range(-5.0..5.0);
         let path_u32: Vec<u32> = path.iter().map(|n| n.index() as u32).collect();
 
+        // Pre-compute bus stop indices for bus vehicles (before path_u32 is moved).
+        let bus_stop_indices: Vec<usize> = if vtype == VehicleType::Bus {
+            let route_edges: Vec<u32> = path_u32.windows(2).filter_map(|w| {
+                let from = NodeIndex::new(w[0] as usize);
+                let to = NodeIndex::new(w[1] as usize);
+                g.find_edge(from, to).map(|e| e.index() as u32)
+            }).collect();
+            self.bus_stops.iter().enumerate()
+                .filter(|(_, stop)| route_edges.contains(&stop.edge_id))
+                .map(|(idx, _)| idx)
+                .collect()
+        } else {
+            Vec::new()
+        };
+
         // Offset pedestrians to the sidewalk (5m perpendicular to road direction).
         let (spawn_x, spawn_y) = if vtype == VehicleType::Pedestrian {
             let seg_dx = next_pos[0] - start_pos[0];
@@ -171,20 +187,39 @@ impl SimWorld {
         {
             // Lane-based vehicles: LateralOffset at lane 0 center.
             let initial_lateral = (0.0 + 0.5) * 3.5; // lane 0 center = 1.75m
-            self.world.spawn((
-                base_components.0,
-                base_components.1,
-                base_components.2,
-                base_components.3,
-                base_components.4,
-                base_components.5,
-                base_components.6,
-                cf_model.unwrap(),
-                LateralOffset {
-                    lateral_offset: initial_lateral,
-                    desired_lateral: initial_lateral,
-                },
-            ));
+
+            if vtype == VehicleType::Bus {
+                self.world.spawn((
+                    base_components.0,
+                    base_components.1,
+                    base_components.2,
+                    base_components.3,
+                    base_components.4,
+                    base_components.5,
+                    base_components.6,
+                    cf_model.unwrap(),
+                    LateralOffset {
+                        lateral_offset: initial_lateral,
+                        desired_lateral: initial_lateral,
+                    },
+                    BusState::new(bus_stop_indices),
+                ));
+            } else {
+                self.world.spawn((
+                    base_components.0,
+                    base_components.1,
+                    base_components.2,
+                    base_components.3,
+                    base_components.4,
+                    base_components.5,
+                    base_components.6,
+                    cf_model.unwrap(),
+                    LateralOffset {
+                        lateral_offset: initial_lateral,
+                        desired_lateral: initial_lateral,
+                    },
+                ));
+            }
         } else {
             // Pedestrians: no CarFollowingModel (they use social force, not car-following).
             self.world.spawn(base_components);

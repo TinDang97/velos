@@ -469,6 +469,15 @@ fn wave_front_update(
             delta_v = own_speed_f32 - leader_speed_f32;
         }
 
+        // Bus dwelling guard: skip all physics for dwelling buses.
+        // CPU manages dwell state machine; GPU just holds speed at zero.
+        if agent.vehicle_type == VT_BUS && (agent.flags & FLAG_BUS_DWELLING) != 0u {
+            agent.speed = f32_to_fixspd(0.0);
+            agent.acceleration = f32_to_fixspd(0.0);
+            agents[agent_idx] = agent;
+            continue;
+        }
+
         // Pre-processing: emergency vehicle intersection deceleration
         // Emergency vehicles with active sirens decelerate to 5 m/s safety speed
         // at intersections (when they are the lane leader with no vehicle ahead).

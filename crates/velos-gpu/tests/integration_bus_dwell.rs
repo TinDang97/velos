@@ -10,12 +10,11 @@ use hecs::Entity;
 use petgraph::graph::DiGraph;
 
 use velos_core::components::{
-    GpuAgentState, Kinematics, Position, RoadPosition, Route, VehicleType, WaitState,
+    Kinematics, Position, RoadPosition, Route, VehicleType, WaitState,
 };
-use velos_core::fixed_point::{FixLat, FixPos, FixSpd};
-use velos_gpu::sim::{SimState, SimWorld};
+use velos_gpu::sim::SimWorld;
 use velos_net::graph::{RoadClass, RoadEdge, RoadGraph, RoadNode};
-use velos_vehicle::bus::{BusDwellModel, BusState, BusStop};
+use velos_vehicle::bus::{BusState, BusStop};
 
 /// Build a simple linear road graph with 3 nodes (2 edges).
 fn make_bus_route_graph() -> RoadGraph {

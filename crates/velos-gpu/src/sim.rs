@@ -24,6 +24,7 @@ use velos_net::{RoadGraph, SpatialIndex};
 use velos_signal::detector::{DetectorReading, LoopDetector};
 use velos_signal::priority::{PriorityLevel, PriorityRequest};
 use velos_signal::SignalController;
+use velos_vehicle::bus::{BusDwellModel, BusStop};
 use velos_vehicle::config::VehicleConfig;
 use velos_vehicle::social_force::SocialForceParams;
 use velos_vehicle::sublane::SublaneParams;
@@ -129,6 +130,10 @@ pub struct SimWorld {
     /// Pre-allocated GPU buffers for perception pipeline input.
     /// None in CPU-only test paths.
     pub(crate) perception_buffers: Option<PerceptionBuffers>,
+    /// Bus stops on the network (empty until GTFS loaded).
+    pub bus_stops: Vec<BusStop>,
+    /// Empirical bus dwell time model parameters.
+    pub(crate) bus_dwell_model: BusDwellModel,
 }
 
 impl SimWorld {
@@ -200,6 +205,8 @@ impl SimWorld {
             vehicle_config,
             loop_detectors,
             perception_buffers: Some(perception_buffers),
+            bus_stops: Vec::new(),
+            bus_dwell_model: BusDwellModel::default(),
         };
 
         // Initialize reroute subsystem (builds CCH, prediction service).
@@ -249,6 +256,8 @@ impl SimWorld {
             vehicle_config,
             loop_detectors,
             perception_buffers: None,
+            bus_stops: Vec::new(),
+            bus_dwell_model: BusDwellModel::default(),
         }
     }
 
@@ -333,6 +342,7 @@ impl SimWorld {
         let spatial = SpatialIndex::from_positions(&snapshot.ids, &snapshot.positions);
 
         self.step_vehicles_gpu(dt as f32, device, queue, dispatcher);
+        self.step_bus_dwell(dt);
         self.step_pedestrians(dt, &spatial, &snapshot);
 
         // 9-10. Gridlock detection, cleanup, metrics
@@ -371,6 +381,7 @@ impl SimWorld {
 
         crate::cpu_reference::step_vehicles(self, dt, &spatial, &snapshot);
         crate::cpu_reference::step_motorbikes_sublane(self, dt, &spatial, &snapshot);
+        self.step_bus_dwell(dt);
         self.step_pedestrians(dt, &spatial, &snapshot);
 
         self.detect_gridlock();
@@ -539,7 +550,7 @@ impl SimWorld {
         let mut gpu_agents: Vec<GpuAgentState> = Vec::new();
         let mut entity_map: Vec<Entity> = Vec::new();
 
-        for (entity, rp, kin, vtype, lat, cf_model) in self
+        for (entity, rp, kin, vtype, lat, cf_model, bus_state) in self
             .world
             .query_mut::<(
                 Entity,
@@ -548,6 +559,7 @@ impl SimWorld {
                 &VehicleType,
                 Option<&LateralOffset>,
                 Option<&CarFollowingModel>,
+                Option<&velos_vehicle::bus::BusState>,
             )>()
             .into_iter()
         {
@@ -578,7 +590,11 @@ impl SimWorld {
                 cf_model: cf as u32,
                 rng_state: rng_seed,
                 vehicle_type: vtype_gpu,
-                flags: 0,
+                flags: if bus_state.map_or(false, |bs| bs.is_dwelling()) {
+                    1
+                } else {
+                    0
+                },
             });
             entity_map.push(entity);
         }
