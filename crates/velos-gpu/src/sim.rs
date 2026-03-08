@@ -16,7 +16,8 @@ use rand::rngs::StdRng;
 use rand::SeedableRng;
 
 use velos_core::components::{
-    CarFollowingModel, GpuAgentState, Kinematics, LateralOffset, RoadPosition, VehicleType,
+    CarFollowingModel, GpuAgentState, Kinematics, LateralOffset, Position, RoadPosition,
+    VehicleType,
 };
 use velos_core::fixed_point::{FixLat, FixPos, FixSpd};
 use velos_demand::{OdMatrix, Spawner, TodProfile, Zone};
@@ -191,6 +192,22 @@ impl SimWorld {
 
         // Create perception pipeline (300K max covers 280K target).
         let perception = PerceptionPipeline::new(device, 300_000);
+
+        // Create the shared perception result buffer with STORAGE | COPY_SRC.
+        // This single buffer is used by both:
+        //   - perception.wgsl (binding 7, storage read_write) -- writes perception data
+        //   - wave_front.wgsl (binding 8, storage read) -- reads for red_light_creep, gap_acceptance
+        // Ownership goes to ComputeDispatcher; PerceptionPipeline receives references
+        // via PerceptionBindings during dispatch.
+        let perc_result_size =
+            (300_000u64) * (std::mem::size_of::<crate::perception::PerceptionResult>() as u64);
+        let perc_result_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("perception_results_shared"),
+            size: perc_result_size.max(32),
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+            mapped_at_creation: false,
+        });
+        dispatcher.set_perception_result_buffer(perc_result_buffer);
 
         // Pre-allocate perception auxiliary buffers.
         let edge_count = road_graph.edge_count() as u32;
@@ -602,10 +619,13 @@ impl SimWorld {
         queue: &wgpu::Queue,
         dispatcher: &mut ComputeDispatcher,
     ) {
+        use crate::compute::{compute_agent_flags, GpuEmergencyVehicle};
+
         let mut gpu_agents: Vec<GpuAgentState> = Vec::new();
         let mut entity_map: Vec<Entity> = Vec::new();
+        let mut emergency_list: Vec<GpuEmergencyVehicle> = Vec::new();
 
-        for (entity, rp, kin, vtype, lat, cf_model, bus_state) in self
+        for (entity, rp, kin, vtype, lat, cf_model, bus_state, pos) in self
             .world
             .query_mut::<(
                 Entity,
@@ -615,6 +635,7 @@ impl SimWorld {
                 Option<&LateralOffset>,
                 Option<&CarFollowingModel>,
                 Option<&velos_vehicle::bus::BusState>,
+                &Position,
             )>()
             .into_iter()
         {
@@ -635,6 +656,9 @@ impl SimWorld {
                 VehicleType::Pedestrian => 6,
             };
 
+            let is_dwelling = bus_state.map_or(false, |bs| bs.is_dwelling());
+            let is_emergency = *vtype == VehicleType::Emergency;
+
             gpu_agents.push(GpuAgentState {
                 edge_id: rp.edge_index,
                 lane_idx: rp.lane as u32,
@@ -645,18 +669,29 @@ impl SimWorld {
                 cf_model: cf as u32,
                 rng_state: rng_seed,
                 vehicle_type: vtype_gpu,
-                flags: if bus_state.map_or(false, |bs| bs.is_dwelling()) {
-                    1
-                } else {
-                    0
-                },
+                flags: compute_agent_flags(is_dwelling, is_emergency),
             });
             entity_map.push(entity);
+
+            // Collect emergency vehicle world positions for yield cone buffer.
+            if is_emergency {
+                emergency_list.push(GpuEmergencyVehicle {
+                    pos_x: pos.x as f32,
+                    pos_y: pos.y as f32,
+                    heading: kin.heading as f32,
+                    _pad: 0.0,
+                });
+            }
         }
 
         if gpu_agents.is_empty() {
+            // Still upload empty emergency list to reset count to 0.
+            dispatcher.upload_emergency_vehicles(queue, &emergency_list);
             return;
         }
+
+        // Upload emergency vehicle positions for GPU yield cone detection.
+        dispatcher.upload_emergency_vehicles(queue, &emergency_list);
 
         let (lane_offsets, lane_counts, lane_agent_indices) = sort_agents_by_lane(&gpu_agents);
 

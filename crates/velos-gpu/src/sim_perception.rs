@@ -118,6 +118,10 @@ impl SimWorld {
             return Vec::new();
         }
 
+        // The shared result buffer lives in ComputeDispatcher -- same buffer
+        // that wave_front.wgsl reads at binding(8).
+        let result_buffer = dispatcher.perception_result_buffer();
+
         let bindings = PerceptionBindings {
             agent_buffer,
             lane_agents_buffer,
@@ -125,6 +129,7 @@ impl SimWorld {
             sign_buffer: dispatcher.sign_buffer(),
             congestion_grid_buffer: &perc_buffers.congestion_grid_buffer,
             edge_travel_ratio_buffer: &perc_buffers.edge_travel_ratio_buffer,
+            result_buffer,
         };
 
         let bind_group = perception.create_bind_group(device, &bindings);
@@ -140,7 +145,7 @@ impl SimWorld {
         perception.dispatch(&mut encoder, queue, &bind_group, &params);
         queue.submit(std::iter::once(encoder.finish()));
 
-        perception.readback_results(device, queue, agent_count)
+        perception.readback_results(device, queue, result_buffer, agent_count)
     }
 
     /// Write per-edge signal states to the signal buffer.

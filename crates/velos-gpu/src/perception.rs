@@ -54,7 +54,8 @@ const WORKGROUP_SIZE: u32 = 256;
 
 /// Input buffer references for perception bind group creation.
 ///
-/// Groups the 6 input buffers to avoid too-many-arguments clippy warning.
+/// Groups the 7 input buffers to avoid too-many-arguments clippy warning.
+/// The `result_buffer` is owned by `ComputeDispatcher` and shared via reference.
 pub struct PerceptionBindings<'a> {
     /// Agent state buffer (from ComputeDispatcher::agent_buffer()).
     pub agent_buffer: &'a wgpu::Buffer,
@@ -68,16 +69,21 @@ pub struct PerceptionBindings<'a> {
     pub congestion_grid_buffer: &'a wgpu::Buffer,
     /// Per-edge travel time ratio (current / free_flow).
     pub edge_travel_ratio_buffer: &'a wgpu::Buffer,
+    /// Shared perception result buffer (owned by ComputeDispatcher, binding 7 in perception, binding 8 in wave_front).
+    pub result_buffer: &'a wgpu::Buffer,
 }
 
 /// GPU perception pipeline with separate bind group from wave_front.
 ///
 /// Reads agent buffer (from ComputeDispatcher), signal/sign/congestion buffers,
 /// and writes PerceptionResult per agent for CPU readback.
+///
+/// The result buffer is NOT owned by this pipeline. It lives in `ComputeDispatcher`
+/// and is shared via `PerceptionBindings::result_buffer`. This ensures binding(8)
+/// in wave_front.wgsl reads the same buffer that perception.wgsl writes to.
 pub struct PerceptionPipeline {
     pipeline: wgpu::ComputePipeline,
     bind_group_layout: wgpu::BindGroupLayout,
-    result_buffer: wgpu::Buffer,
     staging_buffer: wgpu::Buffer,
     params_buffer: wgpu::Buffer,
     max_agents: u32,
@@ -133,19 +139,13 @@ impl PerceptionPipeline {
                 cache: None,
             });
 
-        let result_size = (max_agents as u64) * (std::mem::size_of::<PerceptionResult>() as u64);
-        let result_size = result_size.max(32); // min 32 bytes for valid buffer
-
-        let result_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("perception_results"),
-            size: result_size,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
-            mapped_at_creation: false,
-        });
+        // Staging buffer sized for max_agents readback (result buffer is external).
+        let staging_size = ((max_agents as u64) * (std::mem::size_of::<PerceptionResult>() as u64))
+            .max(32); // min 32 bytes for valid buffer
 
         let staging_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("perception_staging"),
-            size: result_size,
+            size: staging_size,
             usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
@@ -160,29 +160,23 @@ impl PerceptionPipeline {
         Self {
             pipeline,
             bind_group_layout,
-            result_buffer,
             staging_buffer,
             params_buffer,
             max_agents,
         }
     }
 
-    /// Create a bind group with all input buffers and the result buffer.
+    /// Create a bind group with all input buffers and the shared result buffer.
     ///
     /// The `agent_buffer` is obtained from `ComputeDispatcher::agent_buffer()`.
-    /// The `signal_buffer`, `sign_buffer`, `congestion_grid_buffer`, and
-    /// `edge_travel_ratio_buffer` are created externally (wired in Plan 07-06).
+    /// The `result_buffer` is owned by `ComputeDispatcher` and shared via
+    /// `PerceptionBindings::result_buffer` -- the same buffer used at binding(8)
+    /// in wave_front.wgsl, ensuring perception data flows to car-following behaviors.
     pub fn create_bind_group(
         &self,
         device: &wgpu::Device,
         bindings: &PerceptionBindings<'_>,
     ) -> wgpu::BindGroup {
-        let agent_buffer = bindings.agent_buffer;
-        let lane_agents_buffer = bindings.lane_agents_buffer;
-        let signal_buffer = bindings.signal_buffer;
-        let sign_buffer = bindings.sign_buffer;
-        let congestion_grid_buffer = bindings.congestion_grid_buffer;
-        let edge_travel_ratio_buffer = bindings.edge_travel_ratio_buffer;
         device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("perception_bg"),
             layout: &self.bind_group_layout,
@@ -193,31 +187,31 @@ impl PerceptionPipeline {
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
-                    resource: agent_buffer.as_entire_binding(),
+                    resource: bindings.agent_buffer.as_entire_binding(),
                 },
                 wgpu::BindGroupEntry {
                     binding: 2,
-                    resource: lane_agents_buffer.as_entire_binding(),
+                    resource: bindings.lane_agents_buffer.as_entire_binding(),
                 },
                 wgpu::BindGroupEntry {
                     binding: 3,
-                    resource: signal_buffer.as_entire_binding(),
+                    resource: bindings.signal_buffer.as_entire_binding(),
                 },
                 wgpu::BindGroupEntry {
                     binding: 4,
-                    resource: sign_buffer.as_entire_binding(),
+                    resource: bindings.sign_buffer.as_entire_binding(),
                 },
                 wgpu::BindGroupEntry {
                     binding: 5,
-                    resource: congestion_grid_buffer.as_entire_binding(),
+                    resource: bindings.congestion_grid_buffer.as_entire_binding(),
                 },
                 wgpu::BindGroupEntry {
                     binding: 6,
-                    resource: edge_travel_ratio_buffer.as_entire_binding(),
+                    resource: bindings.edge_travel_ratio_buffer.as_entire_binding(),
                 },
                 wgpu::BindGroupEntry {
                     binding: 7,
-                    resource: self.result_buffer.as_entire_binding(),
+                    resource: bindings.result_buffer.as_entire_binding(),
                 },
             ],
         })
@@ -250,11 +244,13 @@ impl PerceptionPipeline {
 
     /// Copy result buffer to staging and read back perception results to CPU.
     ///
+    /// The `result_buffer` is the shared buffer owned by `ComputeDispatcher`.
     /// Returns one `PerceptionResult` per agent up to `agent_count`.
     pub fn readback_results(
         &self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
+        result_buffer: &wgpu::Buffer,
         agent_count: u32,
     ) -> Vec<PerceptionResult> {
         let count = agent_count.min(self.max_agents) as usize;
@@ -266,7 +262,7 @@ impl PerceptionPipeline {
 
         let mut encoder = device.create_command_encoder(&Default::default());
         encoder.copy_buffer_to_buffer(
-            &self.result_buffer,
+            result_buffer,
             0,
             &self.staging_buffer,
             0,
@@ -284,11 +280,6 @@ impl PerceptionPipeline {
         self.staging_buffer.unmap();
 
         results
-    }
-
-    /// Returns a reference to the result buffer (for chaining with other GPU passes).
-    pub fn result_buffer(&self) -> &wgpu::Buffer {
-        &self.result_buffer
     }
 
     /// Returns the maximum number of agents this pipeline was allocated for.
