@@ -61,20 +61,9 @@ fn rand_float(rng_state: u32, step: u32) -> f32 {
 const CF_IDM: u32 = 0u;
 const CF_KRAUSS: u32 = 1u;
 
-// IDM default parameters
-const IDM_V0: f32 = 13.89;       // desired speed 50 km/h
-const IDM_S0: f32 = 2.0;         // min gap at standstill
-const IDM_T_HEADWAY: f32 = 1.5;  // desired time headway
-const IDM_A: f32 = 1.5;          // max acceleration
-const IDM_B: f32 = 3.0;          // comfortable deceleration
-const IDM_MAX_DECEL: f32 = -9.0; // hard deceleration limit
-
-// Krauss default parameters
-const KRAUSS_ACCEL: f32 = 2.6;
-const KRAUSS_DECEL: f32 = 4.5;
-const KRAUSS_SIGMA: f32 = 0.5;
-const KRAUSS_TAU: f32 = 1.0;
-const KRAUSS_MAX_SPEED: f32 = 13.89;
+// Physical limits (not tunable per vehicle type)
+const IDM_MAX_DECEL: f32 = -9.0; // hard deceleration limit (physical)
+const KRAUSS_TAU: f32 = 1.0;     // reaction time (shared across types)
 
 // ============================================================
 // Buffer layout
@@ -143,6 +132,21 @@ struct GpuSign {
 
 @group(0) @binding(6) var<storage, read> signs: array<GpuSign>;
 
+// Per-vehicle-type parameters (matches Rust GpuVehicleParams layout)
+// Indexed by vehicle_type: 0=Motorbike..6=Pedestrian
+struct VehicleTypeParams {
+    v0: f32,            // desired free-flow speed (m/s)
+    s0: f32,            // minimum gap at standstill (m)
+    t_headway: f32,     // desired time headway (s)
+    a: f32,             // IDM max acceleration (m/s^2)
+    b: f32,             // IDM comfortable deceleration (m/s^2)
+    krauss_accel: f32,  // Krauss max acceleration (m/s^2)
+    krauss_decel: f32,  // Krauss max deceleration (m/s^2)
+    krauss_sigma: f32,  // Krauss driver imperfection [0, 1]
+}
+
+@group(0) @binding(7) var<uniform> vehicle_params: array<VehicleTypeParams, 7>;
+
 // Sign type constants
 const SIGN_SPEED_LIMIT: u32 = 0u;
 const SIGN_STOP: u32 = 1u;
@@ -164,16 +168,18 @@ fn safe_pow4(x: f32) -> f32 {
     return x2 * x2;
 }
 
-fn idm_acceleration(v: f32, gap: f32, delta_v: f32) -> f32 {
+fn idm_acceleration(v: f32, gap: f32, delta_v: f32, vt: u32) -> f32 {
+    let vp = vehicle_params[vt];
+
     // Free-road term: 1 - (v/v0)^4
-    let v_ratio = v / IDM_V0;
+    let v_ratio = v / vp.v0;
     let free_term = 1.0 - safe_pow4(v_ratio);
 
     // Desired dynamical gap s*
     let v_eff = max(v, 0.1); // kickstart
-    let ab_sqrt = sqrt(IDM_A * IDM_B);
-    let s_star = IDM_S0
-        + v_eff * IDM_T_HEADWAY
+    let ab_sqrt = sqrt(vp.a * vp.b);
+    let s_star = vp.s0
+        + v_eff * vp.t_headway
         + (v * delta_v) / (2.0 * ab_sqrt);
 
     // Interaction term
@@ -182,29 +188,31 @@ fn idm_acceleration(v: f32, gap: f32, delta_v: f32) -> f32 {
     let interaction = gap_ratio * gap_ratio;
 
     // IDM acceleration, clamped
-    let accel = IDM_A * (free_term - interaction);
-    return clamp(accel, IDM_MAX_DECEL, IDM_A);
+    let accel = vp.a * (free_term - interaction);
+    return clamp(accel, IDM_MAX_DECEL, vp.a);
 }
 
 // ============================================================
 // Krauss car-following (matches CPU krauss.rs)
 // ============================================================
 
-fn krauss_safe_speed(gap: f32, leader_speed: f32, own_speed: f32) -> f32 {
-    let denominator = (leader_speed + own_speed) / (2.0 * KRAUSS_DECEL) + KRAUSS_TAU;
+fn krauss_safe_speed(gap: f32, leader_speed: f32, own_speed: f32, vt: u32) -> f32 {
+    let vp = vehicle_params[vt];
+    let denominator = (leader_speed + own_speed) / (2.0 * vp.krauss_decel) + KRAUSS_TAU;
     let numerator = gap - leader_speed * KRAUSS_TAU;
     let v_safe = leader_speed + numerator / denominator;
     return max(v_safe, 0.0);
 }
 
-fn krauss_update(own_speed: f32, gap: f32, leader_speed: f32, dt: f32, rng_val: f32) -> f32 {
-    let v_safe = krauss_safe_speed(gap, leader_speed, own_speed);
-    let v_desired = min(own_speed + KRAUSS_ACCEL * dt, KRAUSS_MAX_SPEED);
+fn krauss_update(own_speed: f32, gap: f32, leader_speed: f32, dt: f32, rng_val: f32, vt: u32) -> f32 {
+    let vp = vehicle_params[vt];
+    let v_safe = krauss_safe_speed(gap, leader_speed, own_speed, vt);
+    let v_desired = min(own_speed + vp.krauss_accel * dt, vp.v0);
     let v_next = min(v_desired, v_safe);
 
     // Dawdle
-    let dawdle_base = select(KRAUSS_ACCEL, v_next, v_next < KRAUSS_ACCEL);
-    let v_dawdled = v_next - KRAUSS_SIGMA * min(v_next, dawdle_base) * rng_val;
+    let dawdle_base = select(vp.krauss_accel, v_next, v_next < vp.krauss_accel);
+    let v_dawdled = v_next - vp.krauss_sigma * min(v_next, dawdle_base) * rng_val;
     return max(v_dawdled, 0.0);
 }
 
@@ -392,8 +400,10 @@ fn wave_front_update(
         var new_speed_f32: f32;
         var accel_f32: f32;
 
+        let vt = agent.vehicle_type;
+
         if agent.cf_model == CF_IDM {
-            accel_f32 = idm_acceleration(own_speed_f32, gap, delta_v);
+            accel_f32 = idm_acceleration(own_speed_f32, gap, delta_v, vt);
             new_speed_f32 = own_speed_f32 + accel_f32 * dt;
             // Stopping guard: if would go negative, stop
             if new_speed_f32 < 0.0 {
@@ -403,7 +413,7 @@ fn wave_front_update(
         } else {
             // CF_KRAUSS
             let rng_val = rand_float(agent.rng_state, step);
-            new_speed_f32 = krauss_update(own_speed_f32, gap, leader_speed_f32, dt, rng_val);
+            new_speed_f32 = krauss_update(own_speed_f32, gap, leader_speed_f32, dt, rng_val, vt);
             accel_f32 = (new_speed_f32 - own_speed_f32) / max(dt, 0.001);
         }
 
