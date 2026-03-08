@@ -138,6 +138,10 @@ pub struct ComputeDispatcher {
     emergency_buffer: wgpu::Buffer,
     sign_buffer: wgpu::Buffer,
 
+    // Perception results buffer (binding 8) — zeroed placeholder until PerceptionPipeline wired.
+    // 32 bytes per agent (PerceptionResult), pre-allocated for 300K agents.
+    perception_result_buffer: wgpu::Buffer,
+
     /// Current agent count in GPU buffers.
     pub wave_front_agent_count: u32,
     /// Current lane count for dispatch.
@@ -210,6 +214,7 @@ impl ComputeDispatcher {
                     bgl_entry(5, wgpu::BufferBindingType::Storage { read_only: true }, false),
                     bgl_entry(6, wgpu::BufferBindingType::Storage { read_only: true }, false),
                     bgl_entry(7, wgpu::BufferBindingType::Uniform, false),
+                    bgl_entry(8, wgpu::BufferBindingType::Storage { read_only: true }, false),
                 ],
             });
 
@@ -261,6 +266,16 @@ impl ComputeDispatcher {
             mapped_at_creation: false,
         });
 
+        // Perception results placeholder buffer (binding 8): zeroed, 32 bytes per agent.
+        // Pre-allocate for 300K agents (9.6 MB). Replaced at runtime via
+        // set_perception_result_buffer() once PerceptionPipeline is wired.
+        let perception_result_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("wf_perception_results"),
+            size: 300_000 * 32,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
         Self {
             pipeline,
             bind_group_layout,
@@ -276,6 +291,7 @@ impl ComputeDispatcher {
             vehicle_params_buffer,
             emergency_buffer,
             sign_buffer,
+            perception_result_buffer,
             wave_front_agent_count: 0,
             wave_front_lane_count: 0,
             step_counter: 0,
@@ -404,6 +420,36 @@ impl ComputeDispatcher {
         }
     }
 
+    /// Replace the placeholder perception result buffer with the PerceptionPipeline's
+    /// result buffer. Called once at sim startup after PerceptionPipeline is created.
+    pub fn set_perception_result_buffer(&mut self, buffer: wgpu::Buffer) {
+        self.perception_result_buffer = buffer;
+    }
+
+    /// Returns a reference to the perception result buffer (binding 8).
+    pub fn perception_result_buffer(&self) -> &wgpu::Buffer {
+        &self.perception_result_buffer
+    }
+
+    /// Returns a reference to the sign buffer for use by other pipelines (e.g., perception).
+    pub fn sign_buffer(&self) -> &wgpu::Buffer {
+        &self.sign_buffer
+    }
+
+    /// Upload traffic sign data to the GPU sign buffer (binding 6).
+    ///
+    /// Writes `signs` to the pre-allocated sign buffer and updates `sign_count`.
+    /// If `signs` is empty, sets `sign_count` to 0 (valid -- shader early-exits).
+    /// Truncates to 256 signs if more are provided (buffer capacity).
+    pub fn upload_signs(&mut self, queue: &wgpu::Queue, signs: &[velos_signal::signs::GpuSign]) {
+        let count = signs.len().min(256);
+        self.sign_count = count as u32;
+        if count > 0 {
+            let bytes = bytemuck::cast_slice(&signs[..count]);
+            queue.write_buffer(&self.sign_buffer, 0, bytes);
+        }
+    }
+
     /// Upload per-vehicle-type parameters to the GPU uniform buffer (binding 7).
     ///
     /// Call this once at startup (with `GpuVehicleParams::from_config`) and again
@@ -471,6 +517,10 @@ impl ComputeDispatcher {
                 wgpu::BindGroupEntry {
                     binding: 7,
                     resource: self.vehicle_params_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 8,
+                    resource: self.perception_result_buffer.as_entire_binding(),
                 },
             ],
         });

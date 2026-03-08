@@ -147,6 +147,27 @@ struct VehicleTypeParams {
 
 @group(0) @binding(7) var<uniform> vehicle_params: array<VehicleTypeParams, 7>;
 
+// Per-agent perception result from GPU gather pass (32 bytes, matches Rust PerceptionResult).
+// Written by perception.wgsl, read here for HCMC behavior functions.
+struct PerceptionResult {
+    leader_speed: f32,       // m/s, 0.0 if no leader
+    leader_gap: f32,         // m, 9999.0 if no leader
+    signal_state: u32,       // 0=green, 1=amber, 2=red, 3=none
+    signal_distance: f32,    // m to next signal
+    congestion_own_route: f32,
+    congestion_area: f32,
+    sign_speed_limit: f32,   // m/s, 0.0 if none
+    perc_flags: u32,         // bit0=route_blocked, bit1=emergency_nearby
+}
+
+@group(0) @binding(8) var<storage, read> perception_results: array<PerceptionResult>;
+
+// Signal state constants for perception
+const SIGNAL_GREEN: u32 = 0u;
+const SIGNAL_AMBER: u32 = 1u;
+const SIGNAL_RED: u32 = 2u;
+const SIGNAL_NONE: u32 = 3u;
+
 // Sign type constants
 const SIGN_SPEED_LIMIT: u32 = 0u;
 const SIGN_STOP: u32 = 1u;
