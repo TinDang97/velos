@@ -16,7 +16,7 @@ Requirements for Digital Twin milestone. Each maps to roadmap phases.
 
 ### 2D Map Rendering
 
-- [ ] **MAP-01**: Self-hosted 2D vector map tiles from OSM render as background layer in the simulation view
+- [x] **MAP-01**: Self-hosted 2D vector map tiles from OSM render as background layer in the simulation view
 - [ ] **MAP-02**: Sublane positions are visually rendered in 2D — vehicles show lateral offsets through intersections with lane marking context
 
 ### Detection Ingestion
@@ -85,7 +85,7 @@ Deferred to future release. Tracked but not in current roadmap.
 | ISL-02 | Phase 16 | Pending |
 | ISL-03 | Phase 16 | Complete |
 | ISL-04 | Phase 16 | Pending |
-| MAP-01 | Phase 16 | Pending |
+| MAP-01 | Phase 16 | Complete |
 | MAP-02 | Phase 16 | Pending |
 | DET-01 | Phase 17 | Pending |
 | DET-02 | Phase 17 | Pending |

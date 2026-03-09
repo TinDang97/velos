@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Digital Twin
 status: executing
-stopped_at: Completed 16-01-PLAN.md
-last_updated: "2026-03-09T12:25:57Z"
-last_activity: 2026-03-09 -- Phase 16 Plan 01 complete (junction geometry + JunctionTraversal ECS)
+stopped_at: Completed 16-03-PLAN.md
+last_updated: "2026-03-09T12:28:00Z"
+last_activity: 2026-03-09 -- Phase 16 Plan 03 complete (map tile rendering pipeline)
 progress:
   total_phases: 5
   completed_phases: 0
   total_plans: 4
-  completed_plans: 1
-  percent: 25
+  completed_plans: 2
+  percent: 50
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-03-09)
 ## Current Position
 
 Phase: 16 of 20 (Intersection Sublane Model)
-Plan: 1 of 4 in current phase
+Plan: 2 of 4 in current phase
 Status: Executing
-Last activity: 2026-03-09 -- Phase 16 Plan 01 complete (junction geometry + JunctionTraversal ECS)
+Last activity: 2026-03-09 -- Phase 16 Plan 03 complete (map tile rendering pipeline)
 
-Progress: [██░░░░░░░░] 25% (v1.2)
+Progress: [█████░░░░░] 50% (v1.2)
 
 ## Accumulated Context
 
@@ -39,6 +39,9 @@ Progress: [██░░░░░░░░] 25% (v1.2)
 Decisions are logged in PROJECT.md Key Decisions table.
 Recent decisions affecting current work:
 
+- [16-03]: 128-tile LRU cache with GPU buffer eviction for map tile memory management
+- [16-03]: Background thread decode + main thread GPU upload via mpsc channel
+- [16-03]: Skip label rendering; map polygons provide sufficient spatial context
 - [16-01]: Filter pass-through nodes (in=1, out=1) from junction precomputation
 - [16-01]: Minimum arc length 1.0m threshold to filter degenerate Bezier curves
 - [16-01]: wait_ticks field on JunctionTraversal for deadlock prevention (MAX_YIELD_TICKS=100)
@@ -61,6 +64,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-09T12:25:57Z
-Stopped at: Completed 16-01-PLAN.md
-Resume file: .planning/phases/16-intersection-sublane-model/16-01-SUMMARY.md
+Last session: 2026-03-09T12:28:00Z
+Stopped at: Completed 16-03-PLAN.md
+Resume file: .planning/phases/16-intersection-sublane-model/16-03-SUMMARY.md
