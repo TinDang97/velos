@@ -413,6 +413,7 @@ impl PedestrianAdaptivePipeline {
         }
 
         // Pass 4: Social force (one workgroup per cell)
+        // Use 2D dispatch to handle cell_count > 65535 (wgpu limit per dimension).
         {
             let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
                 label: Some("ped_social_force_pass"),
@@ -420,7 +421,10 @@ impl PedestrianAdaptivePipeline {
             });
             pass.set_pipeline(&self.social_force_pipeline);
             pass.set_bind_group(0, &bind_group, &[]);
-            pass.dispatch_workgroups(cell_count, 1, 1);
+            const MAX_WG: u32 = 65535;
+            let x = cell_count.min(MAX_WG);
+            let y = cell_count.div_ceil(MAX_WG);
+            pass.dispatch_workgroups(x, y, 1);
         }
     }
 

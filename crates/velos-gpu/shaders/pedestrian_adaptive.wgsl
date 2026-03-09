@@ -236,8 +236,8 @@ fn social_force_adaptive(
     @builtin(workgroup_id) wg_id: vec3<u32>,
     @builtin(local_invocation_id) lid: vec3<u32>,
 ) {
-    // wg_id.x = index into non-empty cells (dispatched via indirect or direct with cell_count)
-    let cell_idx = wg_id.x;
+    // 2D dispatch to support > 65535 cells: cell = x + y * 65535
+    let cell_idx = wg_id.x + wg_id.y * 65535u;
     if cell_idx >= params.cell_count {
         return;
     }
