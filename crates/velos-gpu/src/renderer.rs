@@ -309,7 +309,7 @@ impl Renderer {
                 usage: wgpu::BufferUsages::VERTEX,
             });
 
-        let instance_capacity = 8192_u32;
+        let instance_capacity = 300_000_u32;
         let instance_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("instance_buffer"),
             size: (instance_capacity as usize * std::mem::size_of::<AgentInstance>()) as u64,
