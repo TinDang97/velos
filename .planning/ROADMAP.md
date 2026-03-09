@@ -58,7 +58,12 @@
   4. Two agents on crossing paths within a junction detect the conflict and one yields based on priority rules
   5. Self-hosted 2D vector map tiles from OSM render as background layer in the simulation view
   6. Vehicles visually show lateral offsets through intersections with lane marking context in 2D rendering
-**Plans**: TBD
+**Plans**: 4 plans
+Plans:
+- [ ] 16-01-PLAN.md — Junction geometry data model and Bezier precomputation
+- [ ] 16-02-PLAN.md — Junction traversal logic and frame pipeline integration
+- [ ] 16-03-PLAN.md — 2D vector map tile rendering pipeline
+- [ ] 16-04-PLAN.md — Sublane visualization, guide lines, and debug overlays
 
 ### Phase 17: Detection Ingestion & Demand Calibration
 **Goal**: External CV services can push detection data into VELOS via gRPC, and the system uses those detections to adjust simulation demand
@@ -70,7 +75,12 @@
   3. Detection counts per class are aggregated over configurable time windows and speed estimation data is accepted per camera
   4. System adjusts OD spawn rates based on observed-vs-simulated count ratios, with demand changes reflected in agent spawn behavior
   5. Python and Rust client libraries can connect to the gRPC service and push detection events for integration testing
-**Plans**: TBD
+**Plans**: 4 plans
+Plans:
+- [ ] 16-01-PLAN.md — Junction geometry data model and Bezier precomputation
+- [ ] 16-02-PLAN.md — Junction traversal logic and frame pipeline integration
+- [ ] 16-03-PLAN.md — 2D vector map tile rendering pipeline
+- [ ] 16-04-PLAN.md — Sublane visualization, guide lines, and debug overlays
 
 ### Phase 18: 3D Rendering Core
 **Goal**: User can view the running simulation in a 3D perspective with depth-correct rendering, LOD agents, road surfaces, and time-of-day lighting
@@ -82,7 +92,12 @@
   3. Agents render as 3D meshes when close, billboards at mid-range, and dots when far -- all via GPU instancing
   4. User can toggle between 2D top-down and 3D perspective with a single click, preserving camera position
   5. Scene lighting changes with simulation time-of-day (bright directional sun during day, dim ambient at night)
-**Plans**: TBD
+**Plans**: 4 plans
+Plans:
+- [ ] 16-01-PLAN.md — Junction geometry data model and Bezier precomputation
+- [ ] 16-02-PLAN.md — Junction traversal logic and frame pipeline integration
+- [ ] 16-03-PLAN.md — 2D vector map tile rendering pipeline
+- [ ] 16-04-PLAN.md — Sublane visualization, guide lines, and debug overlays
 
 ### Phase 19: 3D City Scene
 **Goal**: The 3D view includes extruded buildings from OSM data and terrain from SRTM DEM, creating a recognizable HCMC cityscape
@@ -92,7 +107,12 @@
   1. OSM building footprints render as extruded 3D volumes with height derived from building:levels tag
   2. Ground surface renders from SRTM DEM heightmap data as a terrain mesh with elevation variation
   3. Buildings and terrain integrate with the existing 3D scene (correct depth, lighting, and camera interaction -- no z-fighting)
-**Plans**: TBD
+**Plans**: 4 plans
+Plans:
+- [ ] 16-01-PLAN.md — Junction geometry data model and Bezier precomputation
+- [ ] 16-02-PLAN.md — Junction traversal logic and frame pipeline integration
+- [ ] 16-03-PLAN.md — 2D vector map tile rendering pipeline
+- [ ] 16-04-PLAN.md — Sublane visualization, guide lines, and debug overlays
 
 ### Phase 20: Real-Time Calibration
 **Goal**: Simulation demand continuously self-corrects from streaming detection data without requiring restart
@@ -101,7 +121,12 @@
 **Success Criteria** (what must be TRUE):
   1. While the simulation is running, new detection data flowing in causes demand adjustments within the current session
   2. User can observe OD spawn rates changing in response to streaming detection counts without stopping or restarting the simulation
-**Plans**: TBD
+**Plans**: 4 plans
+Plans:
+- [ ] 16-01-PLAN.md — Junction geometry data model and Bezier precomputation
+- [ ] 16-02-PLAN.md — Junction traversal logic and frame pipeline integration
+- [ ] 16-03-PLAN.md — 2D vector map tile rendering pipeline
+- [ ] 16-04-PLAN.md — Sublane visualization, guide lines, and debug overlays
 
 ## Progress
 
