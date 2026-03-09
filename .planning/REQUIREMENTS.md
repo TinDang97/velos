@@ -9,9 +9,9 @@ Requirements for Digital Twin milestone. Each maps to roadmap phases.
 
 ### Intersection Sublane
 
-- [ ] **ISL-01**: Vehicles maintain continuous lateral position through junction internal edges (not reset to lane center)
+- [x] **ISL-01**: Vehicles maintain continuous lateral position through junction internal edges (not reset to lane center)
 - [ ] **ISL-02**: Motorbikes can filter and weave through intersection areas using probe-based gap scanning
-- [ ] **ISL-03**: Turn geometry supports sublane positioning (curved paths through intersections with lateral offset)
+- [x] **ISL-03**: Turn geometry supports sublane positioning (curved paths through intersections with lateral offset)
 - [ ] **ISL-04**: Conflict detection at crossing points within junctions resolves priority between sublane-positioned agents
 
 ### 2D Map Rendering
@@ -81,9 +81,9 @@ Deferred to future release. Tracked but not in current roadmap.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| ISL-01 | Phase 16 | Pending |
+| ISL-01 | Phase 16 | Complete |
 | ISL-02 | Phase 16 | Pending |
-| ISL-03 | Phase 16 | Pending |
+| ISL-03 | Phase 16 | Complete |
 | ISL-04 | Phase 16 | Pending |
 | MAP-01 | Phase 16 | Pending |
 | MAP-02 | Phase 16 | Pending |

@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Digital Twin
-status: planning
-stopped_at: Phase 16 context gathered
-last_updated: "2026-03-09T05:08:58.127Z"
-last_activity: 2026-03-09 -- v1.2 roadmap revision 2 (added intersection sublane foundation phase)
+status: executing
+stopped_at: Completed 16-01-PLAN.md
+last_updated: "2026-03-09T12:25:57Z"
+last_activity: 2026-03-09 -- Phase 16 Plan 01 complete (junction geometry + JunctionTraversal ECS)
 progress:
   total_phases: 5
   completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
-  percent: 0
+  total_plans: 4
+  completed_plans: 1
+  percent: 25
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-03-09)
 ## Current Position
 
 Phase: 16 of 20 (Intersection Sublane Model)
-Plan: 0 of ? in current phase
-Status: Ready to plan
-Last activity: 2026-03-09 -- v1.2 roadmap revision 2 (added intersection sublane foundation phase)
+Plan: 1 of 4 in current phase
+Status: Executing
+Last activity: 2026-03-09 -- Phase 16 Plan 01 complete (junction geometry + JunctionTraversal ECS)
 
-Progress: [░░░░░░░░░░] 0% (v1.2)
+Progress: [██░░░░░░░░] 25% (v1.2)
 
 ## Accumulated Context
 
@@ -39,6 +39,10 @@ Progress: [░░░░░░░░░░] 0% (v1.2)
 Decisions are logged in PROJECT.md Key Decisions table.
 Recent decisions affecting current work:
 
+- [16-01]: Filter pass-through nodes (in=1, out=1) from junction precomputation
+- [16-01]: Minimum arc length 1.0m threshold to filter degenerate Bezier curves
+- [16-01]: wait_ticks field on JunctionTraversal for deadlock prevention (MAX_YIELD_TICKS=100)
+- [16-01]: exit_offset_m on BezierTurn (0.1m default) for edge-boundary safety
 - [v1.2 rev2]: Intersection sublane model (Phase 16) is foundation -- simulation correctness before visualization
 - [v1.2]: gRPC ingestion instead of built-in YOLO -- external CV pushes detections to VELOS
 - [v1.2]: Phases 17 + 18 execute in parallel after Phase 16 (architecturally independent)
@@ -57,6 +61,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-09T05:08:58.125Z
-Stopped at: Phase 16 context gathered
-Resume file: .planning/phases/16-intersection-sublane-model/16-CONTEXT.md
+Last session: 2026-03-09T12:25:57Z
+Stopped at: Completed 16-01-PLAN.md
+Resume file: .planning/phases/16-intersection-sublane-model/16-01-SUMMARY.md
