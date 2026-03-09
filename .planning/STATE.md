@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Digital Twin
 status: executing
-stopped_at: Completed 16-02-PLAN.md
-last_updated: "2026-03-09T12:41:45Z"
-last_activity: 2026-03-09 -- Phase 16 Plan 02 complete (junction traversal logic + frame pipeline)
+stopped_at: 16-04 Task 3 checkpoint (human-verify)
+last_updated: "2026-03-09T12:50:00Z"
+last_activity: 2026-03-09 -- Phase 16 Plan 04 Tasks 1-2 complete (visualization + overlays), awaiting Task 3 human-verify
 progress:
   total_phases: 5
   completed_phases: 0
   total_plans: 4
   completed_plans: 3
-  percent: 75
+  percent: 87
 ---
 
 # Project State
@@ -27,10 +27,10 @@ See: .planning/PROJECT.md (updated 2026-03-09)
 
 Phase: 16 of 20 (Intersection Sublane Model)
 Plan: 4 of 4 in current phase
-Status: Executing
-Last activity: 2026-03-09 -- Phase 16 Plan 02 complete (junction traversal logic + frame pipeline)
+Status: Checkpoint (human-verify)
+Last activity: 2026-03-09 -- Phase 16 Plan 04 Tasks 1-2 complete, awaiting visual verification
 
-Progress: [███████░░░] 75% (v1.2)
+Progress: [████████░░] 87% (v1.2)
 
 ## Accumulated Context
 
@@ -39,6 +39,9 @@ Progress: [███████░░░] 75% (v1.2)
 Decisions are logged in PROJECT.md Key Decisions table.
 Recent decisions affecting current work:
 
+- [16-04]: Vehicle-type coloring replaces car-following-model coloring for clearer visual identity
+- [16-04]: Guide lines as quad strips (0.5m width) for cross-GPU consistency, not native lines
+- [16-04]: Instance buffer capacity 300K (was 8192) to support POC agent count
 - [16-02]: Local ConflictPoint struct in velos-vehicle to avoid circular dependency with velos-net
 - [16-02]: VehicleType conversion function bridges velos-core and velos-vehicle enum types
 - [16-02]: Junction entry blocked when foe within 0.3 t-distance of conflict crossing point
@@ -68,6 +71,6 @@ Recent decisions affecting current work:
 
 ## Session Continuity
 
-Last session: 2026-03-09T12:41:45Z
-Stopped at: Completed 16-02-PLAN.md
-Resume file: .planning/phases/16-intersection-sublane-model/16-02-SUMMARY.md
+Last session: 2026-03-09T12:50:00Z
+Stopped at: 16-04 Task 3 checkpoint (human-verify visual verification)
+Resume file: .planning/phases/16-intersection-sublane-model/16-04-SUMMARY.md
