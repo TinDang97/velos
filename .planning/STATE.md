@@ -58,7 +58,7 @@ Recent decisions affecting current work:
 
 ### Pending Todos
 
-None.
+- **[critical] Fix performance regression at 8K agents** — 83.4ms frame time (5x over budget). Profile junction HashMap lookups, build_instances iteration, map tile thread contention, N+1 ECS queries. File: `.planning/todos/pending/2026-03-09-fix-critical-performance-regression-at-8k-agents.md`
 
 ### Blockers/Concerns
 
