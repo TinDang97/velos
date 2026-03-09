@@ -414,23 +414,23 @@ fn precompute_merged_junction(
     let g = graph.inner();
     let cluster_set: HashSet<NodeIndex> = cluster.iter().copied().collect();
 
-    // Compute cluster centroid weighted by node degree (in + out).
-    // High-degree nodes are main intersections; low-degree nodes are
-    // side-street stubs. Weighting by degree pulls the centroid toward
-    // the actual road crossing instead of averaging with offset nodes.
-    let mut cx = 0.0;
-    let mut cy = 0.0;
-    let mut total_weight = 0.0;
-    for &node in cluster {
-        let pos = g[node].pos;
-        let degree = (g.edges_directed(node, Direction::Incoming).count()
-            + g.edges_directed(node, Direction::Outgoing).count()) as f64;
-        let w = degree.max(1.0);
-        cx += pos[0] * w;
-        cy += pos[1] * w;
-        total_weight += w;
-    }
-    let centroid = [cx / total_weight, cy / total_weight];
+    // Use the highest-degree node's position as centroid. Averaging
+    // (even degree-weighted) still drifts when multiple close nodes have
+    // similar degrees but are offset from the road crossing. The node
+    // with the most connections is the actual intersection center.
+    let centroid = {
+        let mut best_node = cluster[0];
+        let mut best_degree = 0usize;
+        for &node in cluster {
+            let degree = g.edges_directed(node, Direction::Incoming).count()
+                + g.edges_directed(node, Direction::Outgoing).count();
+            if degree > best_degree {
+                best_degree = degree;
+                best_node = node;
+            }
+        }
+        g[best_node].pos
+    };
 
     // Collect peripheral incoming edges (source outside cluster, target inside)
     // and peripheral outgoing edges (source inside cluster, target outside).
