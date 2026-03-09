@@ -79,40 +79,54 @@ pub struct SimMetrics {
 
 /// Zone centroid positions derived from road network bounding box.
 fn zone_centroids_from_graph(graph: &RoadGraph) -> HashMap<Zone, [f64; 2]> {
-    let g = graph.inner();
-    let mut min_x = f64::MAX;
-    let mut max_x = f64::MIN;
-    let mut min_y = f64::MAX;
-    let mut max_y = f64::MIN;
-    for node in g.node_indices() {
-        let p = g[node].pos;
-        min_x = min_x.min(p[0]);
-        max_x = max_x.max(p[0]);
-        min_y = min_y.min(p[1]);
-        max_y = max_y.max(p[1]);
-    }
-    let cx = (min_x + max_x) / 2.0;
-    let cy = (min_y + max_y) / 2.0;
-    let w = (max_x - min_x) * 0.3;
-    let h = (max_y - min_y) * 0.3;
+    // Use actual HCMC district geographic positions projected from WGS84.
+    // Projection center: (10.7756, 106.7019) — same as import_osm() in app.rs.
+    // Formula: x = (lon - 106.7019) * cos(10.7756°) * 111320
+    //          y = (lat - 10.7756) * 110540
+    let proj = velos_net::EquirectangularProjection::new(10.7756, 106.7019);
 
     let mut m = HashMap::new();
-    // District 1 sub-zones (POC).
-    m.insert(Zone::BenThanh, [cx, cy]);
-    m.insert(Zone::NguyenHue, [cx + w, cy + h]);
-    m.insert(Zone::Bitexco, [cx + w, cy - h]);
-    m.insert(Zone::BuiVien, [cx - w, cy - h]);
-    m.insert(Zone::Waterfront, [cx - w, cy + h]);
 
-    // 5-district zones spread across the full bounding box.
-    // District 1 (CBD) at center, others at cardinal positions.
-    let dw = (max_x - min_x) * 0.35;
-    let dh = (max_y - min_y) * 0.35;
-    m.insert(Zone::District1, [cx, cy]);
-    m.insert(Zone::District3, [cx + dw, cy]);
-    m.insert(Zone::District5, [cx - dw, cy - dh]);
-    m.insert(Zone::District10, [cx - dw, cy + dh]);
-    m.insert(Zone::BinhThanh, [cx + dw, cy + dh]);
+    // District 1 sub-zones (POC) — real locations in District 1.
+    let (x, y) = proj.project(10.7731, 106.6981); // Ben Thanh Market
+    m.insert(Zone::BenThanh, [x, y]);
+    let (x, y) = proj.project(10.7745, 106.7035); // Nguyen Hue Walking St
+    m.insert(Zone::NguyenHue, [x, y]);
+    let (x, y) = proj.project(10.7715, 106.7048); // Bitexco Tower
+    m.insert(Zone::Bitexco, [x, y]);
+    let (x, y) = proj.project(10.7680, 106.6935); // Bui Vien area
+    m.insert(Zone::BuiVien, [x, y]);
+    let (x, y) = proj.project(10.7770, 106.7080); // Bach Dang waterfront
+    m.insert(Zone::Waterfront, [x, y]);
+
+    // 5-district zones — real district centers.
+    let (x, y) = proj.project(10.7756, 106.7019); // District 1 (CBD center)
+    m.insert(Zone::District1, [x, y]);
+    let (x, y) = proj.project(10.7850, 106.6810); // District 3
+    m.insert(Zone::District3, [x, y]);
+    let (x, y) = proj.project(10.7540, 106.6620); // District 5 (Cho Lon)
+    m.insert(Zone::District5, [x, y]);
+    let (x, y) = proj.project(10.7730, 106.6600); // District 10
+    m.insert(Zone::District10, [x, y]);
+    let (x, y) = proj.project(10.8080, 106.7100); // Binh Thanh
+    m.insert(Zone::BinhThanh, [x, y]);
+
+    // Validate: warn if any centroid has no graph nodes within 2km.
+    let g = graph.inner();
+    for (zone, pos) in &m {
+        let has_nearby = g.node_indices().any(|n| {
+            let np = g[n].pos;
+            let dx = np[0] - pos[0];
+            let dy = np[1] - pos[1];
+            dx * dx + dy * dy <= 2000.0 * 2000.0
+        });
+        if !has_nearby {
+            log::warn!(
+                "Zone {:?} centroid [{:.0}, {:.0}] has no graph nodes within 2km",
+                zone, pos[0], pos[1]
+            );
+        }
+    }
 
     m
 }

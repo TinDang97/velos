@@ -159,8 +159,8 @@ impl SimWorld {
         let origin_pos = self.zone_centroids.get(&req.origin).copied().unwrap_or([0.0, 0.0]);
         let dest_pos = self.zone_centroids.get(&req.destination).copied().unwrap_or([0.0, 0.0]);
 
-        let from_node = self.random_node_near(origin_pos, 300.0);
-        let to_node = self.random_node_near(dest_pos, 300.0);
+        let from_node = self.random_node_near(origin_pos, 1500.0);
+        let to_node = self.random_node_near(dest_pos, 1500.0);
 
         if from_node == to_node {
             return;
