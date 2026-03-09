@@ -185,8 +185,8 @@ fn layer_color(name: &str) -> Option<[f32; 4]> {
         "water" | "waterway" => Some(LayerColors::WATER),
         "transportation" | "road" | "roads" | "highway" => Some(LayerColors::ROAD),
         "park" | "green" | "landcover" => Some(LayerColors::PARK),
-        "landuse" | "land" | "residential" => Some(LayerColors::LANDUSE),
-        _ => None, // skip unknown layers (labels, POIs, etc.)
+        "landuse" | "land" | "residential" | "earth" => Some(LayerColors::LANDUSE),
+        _ => None, // skip unknown layers (labels, POIs, boundaries, etc.)
     }
 }
 
