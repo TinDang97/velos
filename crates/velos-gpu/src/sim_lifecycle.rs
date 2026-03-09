@@ -169,7 +169,15 @@ impl SimWorld {
         let route_result = velos_net::find_route(&self.road_graph, from_node, to_node);
         let path = match route_result {
             Ok((path, _cost)) => path,
-            Err(_) => return,
+            Err(e) => {
+                log::trace!(
+                    "spawn_single_agent: route failed from node {} to node {}: {:?}",
+                    from_node.index(),
+                    to_node.index(),
+                    e
+                );
+                return;
+            }
         };
 
         if path.len() < 2 {

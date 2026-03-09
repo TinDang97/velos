@@ -97,11 +97,23 @@ fn zone_centroids_from_graph(graph: &RoadGraph) -> HashMap<Zone, [f64; 2]> {
     let h = (max_y - min_y) * 0.3;
 
     let mut m = HashMap::new();
+    // District 1 sub-zones (POC).
     m.insert(Zone::BenThanh, [cx, cy]);
     m.insert(Zone::NguyenHue, [cx + w, cy + h]);
     m.insert(Zone::Bitexco, [cx + w, cy - h]);
     m.insert(Zone::BuiVien, [cx - w, cy - h]);
     m.insert(Zone::Waterfront, [cx - w, cy + h]);
+
+    // 5-district zones spread across the full bounding box.
+    // District 1 (CBD) at center, others at cardinal positions.
+    let dw = (max_x - min_x) * 0.35;
+    let dh = (max_y - min_y) * 0.35;
+    m.insert(Zone::District1, [cx, cy]);
+    m.insert(Zone::District3, [cx + dw, cy]);
+    m.insert(Zone::District5, [cx - dw, cy - dh]);
+    m.insert(Zone::District10, [cx - dw, cy + dh]);
+    m.insert(Zone::BinhThanh, [cx + dw, cy + dh]);
+
     m
 }
 
@@ -165,10 +177,10 @@ impl SimWorld {
     const MORNING_RUSH_SECS: f64 = 7.0 * 3600.0;
 
     fn boosted_od() -> OdMatrix {
-        let mut od = OdMatrix::district1_poc();
+        let mut od = OdMatrix::hcmc_5district();
         let pairs: Vec<_> = od.zone_pairs().collect();
         for (from, to, count) in pairs {
-            od.set_trips(from, to, count * 50);
+            od.set_trips(from, to, count * 3);
         }
         od
     }
