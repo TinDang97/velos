@@ -1,230 +1,199 @@
 # Architecture
 
-**Analysis Date:** 2026-03-06
+**Analysis Date:** 2026-03-09
 
 ## Pattern Overview
 
-**Overall:** GPU-accelerated ECS (Entity Component System) microsimulation with Cargo workspace monorepo (14 crates + 1 TypeScript dashboard)
+**Overall:** GPU-accelerated ECS microsimulation with Cargo workspace monorepo (8 implemented crates), winit/wgpu native application with egui UI
 
 **Key Characteristics:**
-- Pre-development phase: no source code exists yet; architecture is fully specified in `docs/architect/`
-- Single-node multi-GPU (2-4x RTX 4090) with METIS graph partitioning across GPUs
-- ECS (hecs) with SoA layout for direct GPU buffer mapping via wgpu/WGSL compute shaders
-- Deterministic wave-front (Gauss-Seidel) per-lane dispatch instead of EVEN/ODD parity
-- Fixed-point integer arithmetic (Q16.16 position, Q12.20 speed) for cross-GPU bitwise determinism
-- In-process Rust-native prediction ensemble (BPR + ETS + historical) with ArcSwap zero-lock overlay
-- CCH (Customizable Contraction Hierarchies) for dynamic-weight pathfinding (3ms weight update vs 30s full CH rebuild)
+- Active development: 8 of 14 planned crates implemented with working GPU simulation pipeline
+- Single binary entry point via `velos-gpu` crate (winit application with egui control panel)
+- ECS (hecs) with SoA layout for CPU-side agent state, GPU buffers use fixed-point `GpuAgentState` (40 bytes/agent)
+- Wave-front (Gauss-Seidel) per-lane GPU dispatch for vehicle car-following physics
+- Dual physics path: GPU (`tick_gpu`) for production, CPU (`tick`) for tests without GPU
+- Fixed-point integer arithmetic: Q16.16 position, Q12.20 speed, Q8.8 lateral offset for determinism
+- In-process prediction ensemble (BPR + ETS + historical) with ArcSwap lock-free overlay
+- CCH pathfinding implemented in `velos-net/src/cch/` with dynamic weight customization
 
 ## Layers
 
 **Foundation Layer (velos-core):**
-- Purpose: ECS world management, simulation scheduler, checkpoint/restore, time controller
-- Location: `crates/velos-core/`
-- Contains: hecs World, frame pipeline orchestration, checkpoint manager (Parquet snapshots), RNG state, gridlock detection
-- Depends on: hecs, rayon
+- Purpose: Shared ECS components, fixed-point types, CFL stability checks, cost functions, reroute evaluation
+- Location: `crates/velos-core/src/`
+- Contains: `Position`, `Kinematics`, `VehicleType`, `RoadPosition`, `Route`, `GpuAgentState`, `LateralOffset`, `WaitState`, `LaneChangeState`, `CarFollowingModel` (IDM/Krauss), `FixLat`/`FixPos`/`FixSpd` fixed-point types, `CostWeights` with 8 `AgentProfile` variants, `RerouteScheduler`
+- Depends on: bytemuck, thiserror
 - Used by: Every other velos crate
 
-**GPU Abstraction Layer (velos-gpu):**
-- Purpose: Multi-GPU device management, buffer pools, WGSL shader registry, partition management
-- Location: `crates/velos-gpu/`
-- Contains: `GpuPartition` (per-GPU device/queue/buffers), `MultiGpuScheduler`, `AgentBufferPool` (double-buffered front/back with fence sync), METIS partition mapping, boundary agent inbox/outbox staging buffers
-- Depends on: wgpu, velos-core
-- Used by: velos-vehicle, velos-pedestrian
+**GPU Orchestration Layer (velos-gpu):**
+- Purpose: Application entry point, GPU compute dispatch, rendering, simulation orchestration
+- Location: `crates/velos-gpu/src/`
+- Contains: `VelosApp` (winit ApplicationHandler), `GpuState` (device/queue/surface), `SimWorld` (owns hecs World + all subsystems), `ComputeDispatcher` (WGSL pipelines), `Renderer` (agent + road rendering), `Camera2D`, `BufferPool`, `PerceptionPipeline`, `PedestrianAdaptivePipeline`, `MultiGpuScheduler`, `partition_network()`
+- Depends on: wgpu, hecs, winit, egui, velos-core, velos-net, velos-vehicle, velos-demand, velos-signal, velos-predict, velos-meso
+- Used by: Binary entry point (`main.rs`)
+- **Note:** This crate is the "god crate" -- it owns simulation state, frame pipeline orchestration, and rendering. Split across ~20 source files to stay under 700 lines each.
 
 **Network Layer (velos-net):**
-- Purpose: Road graph representation, OSM import, CCH pathfinding, spatial indexing
-- Location: `crates/velos-net/`
-- Contains: `RoadGraph`, `CCHRouter` (immutable node order + mutable weights via `customize()`), `NetworkImporter` (HCMC-specific OSM parsing rules), rstar R-tree spatial index
-- Depends on: rstar, velos-core
-- Used by: velos-vehicle, velos-signal, velos-meso, velos-predict, velos-demand
+- Purpose: Road graph, OSM/SUMO import, spatial indexing, routing, CCH pathfinding
+- Location: `crates/velos-net/src/`
+- Contains: `RoadGraph` (petgraph DiGraph wrapper), `RoadEdge` (length, speed limit, lane count, geometry, motorbike-only, time windows), `RoadNode` (position), `import_osm()`, `SpatialIndex` (rstar R-tree), `find_route()`, CCH module (`cch/` with topology, ordering, customization, query, cache), `EquirectangularProjection`, `clean_network()`, SUMO import (`sumo_import.rs`, `sumo_demand.rs`), `snap_to_nearest_edge()`
+- Depends on: osmpbf, petgraph, rstar, velos-signal, velos-demand, velos-vehicle
+- Used by: velos-gpu
 
-**Agent Simulation Layer:**
-- Purpose: Per-agent-type physics models executed on GPU
-- Location: `crates/velos-vehicle/`, `crates/velos-pedestrian/`
-- Contains:
-  - velos-vehicle: IDM car-following, MOBIL lane-change, motorbike sublane filtering (continuous lateral FixedQ8_8), bicycle behavior
-  - velos-pedestrian: Social force model with adaptive workgroup sizing, prefix-sum compaction for non-empty spatial hash cells, density-aware cell sizing (2m/5m/10m)
-- Depends on: velos-core, velos-gpu, velos-net (vehicle only)
-- Used by: velos-core (frame pipeline)
+**Vehicle Behavior Layer (velos-vehicle):**
+- Purpose: Vehicle physics models (car-following, lane-change, sublane, social force)
+- Location: `crates/velos-vehicle/src/`
+- Contains: `IdmParams` + `idm_acceleration()`, `MobilParams` + `mobil_evaluate()`, `SublaneParams` + sublane filtering, `SocialForceParams`, `BusDwellModel` + `BusStop`, `EmergencyVehicle`, `GridlockDetector`, `KraussParams`, `IntersectionModel`, `VehicleConfig` (TOML-loadable per-type params)
+- Depends on: log, rand, serde, toml, thiserror
+- Used by: velos-gpu, velos-net, velos-meso
 
 **Signal Control Layer (velos-signal):**
-- Purpose: Traffic signal controllers
-- Location: `crates/velos-signal/`
-- Contains: Fixed-time signal plans, actuated controllers, junction control types (`Signalized`, `PriorityRule`, `Uncontrolled`), default timing inference by junction leg count
-- Depends on: velos-core, velos-net
-- Used by: velos-core (frame pipeline)
+- Purpose: Traffic signal controllers (fixed-time, actuated, adaptive), detectors, signs
+- Location: `crates/velos-signal/src/`
+- Contains: `SignalController` trait, `FixedTimeController`, `ActuatedController`, `AdaptiveController`, `LoopDetector`, `SignalPlan`/`SignalPhase`, `SpatBroadcast`, `PriorityQueue` (bus/emergency priority), `TrafficSign`/`GpuSign`, `SignalConfig` (TOML), `IntersectionConfig`
+- Depends on: thiserror, log, bytemuck, serde, toml
+- Used by: velos-gpu, velos-net
+
+**Demand Layer (velos-demand):**
+- Purpose: Trip generation, OD matrices, time-of-day profiles, agent spawning
+- Location: `crates/velos-demand/src/`
+- Contains: `OdMatrix` (with `hcmc_5district()`), `Zone` enum (BenThanh, NguyenHue, Bitexco, BuiVien, Waterfront, District1/3/5/10, BinhThanh), `TodProfile` (with `hcmc_weekday()`), `Spawner`, `BusSpawner`, GTFS loader (`load_gtfs_csv()`), `SpawnRequest`, `ProfileDistribution`
+- Depends on: thiserror, log, rand, velos-core
+- Used by: velos-gpu, velos-net
 
 **Mesoscopic Layer (velos-meso):**
-- Purpose: Queue-based mesoscopic simulation for peripheral areas, with graduated buffer zone transition to microscopic
-- Location: `crates/velos-meso/`
-- Contains: Queue model, 100m graduated buffer zone with velocity-matching insertion, IDM parameter interpolation (relaxed at buffer entry, normal at exit)
-- Depends on: velos-core, velos-net
-- Used by: velos-core (frame pipeline)
+- Purpose: Queue-based mesoscopic simulation for peripheral zones with buffer zone transitions
+- Location: `crates/velos-meso/src/`
+- Contains: `SpatialQueue` (BPR-based travel time), `BufferZone` (100m graduated C1-continuous IDM interpolation), `ZoneConfig` (edge-to-zone mapping: Micro/Meso/Buffer)
+- Depends on: serde, thiserror, toml, velos-vehicle
+- Used by: velos-gpu
 
 **Prediction Layer (velos-predict):**
 - Purpose: Edge travel time prediction for dynamic routing
-- Location: `crates/velos-predict/`
-- Contains: `PredictionEnsemble` (BPR w=0.40, ETS w=0.35, Historical w=0.25), `PredictionOverlay` with `Arc<ArcSwap>` for zero-lock atomic swap, `HistoricalMatcher` (3D array: edge x hour x day_type)
-- Depends on: velos-core, velos-net, arc-swap
-- Used by: velos-net (CCH weight customization every 60s)
-
-**Demand Layer (velos-demand):**
-- Purpose: Trip generation and agent spawning
-- Location: `crates/velos-demand/`
-- Contains: OD matrices, time-of-day profiles (weekday/weekend with 19+ time breakpoints), demand events (Tet, football), agent spawning scheduler
-- Depends on: velos-core, velos-net
-- Used by: velos-core (frame pipeline)
-
-**Output Layer (velos-output):**
-- Purpose: Simulation result export
-- Location: `crates/velos-output/`
-- Contains: FCD (floating car data), edge statistics, HBEFA emissions, export to Parquet/CSV/GeoJSON/SUMO XML
-- Depends on: velos-core, arrow-rs
-- Used by: velos-calibrate
-
-**Calibration Layer (velos-calibrate):**
-- Purpose: Parameter tuning against real-world traffic counts
-- Location: `crates/velos-calibrate/`
-- Contains: GEH statistic computation, Bayesian optimization via argmin crate, RMSE validation, calibration workflow (tune OD scaling, IDM params, signal offsets until GEH < 5 for 85%+ links)
-- Depends on: velos-core, velos-output, argmin
-- Used by: External calibration workflow
-
-**API Layer (velos-api):**
-- Purpose: External interface to simulation engine
-- Location: `crates/velos-api/`
-- Contains: tonic gRPC server (lifecycle, checkpoint, agent management, streaming, scenarios), axum REST gateway, WebSocket relay with Redis pub/sub spatial tile fan-out (500m x 500m tiles, FlatBuffers binary frames at 8 bytes/agent)
-- Depends on: velos-core, tonic, axum, redis
-- Used by: velos-scene, velos-viz
-
-**Scenario Layer (velos-scene):**
-- Purpose: Scenario definition and batch comparison
-- Location: `crates/velos-scene/`
-- Contains: Scenario DSL, batch runner, MOE (Measures of Effectiveness) comparison
-- Depends on: velos-core, velos-api
-- Used by: External scenario workflows
-
-**Visualization Layer (velos-viz):**
-- Purpose: Browser-based traffic visualization dashboard
-- Location: `dashboard/` (TypeScript/React, separate pnpm workspace)
-- Contains: deck.gl 2D dashboard (ScatterplotLayer for 280K agents, HeatmapLayer for density, PathLayer for bus routes), CesiumJS 3D (optional), MapLibre with PMTiles
-- Depends on: N/A (separate from Rust workspace)
-- Used by: End users via browser
+- Location: `crates/velos-predict/src/`
+- Contains: `PredictionService` (owns ensemble + overlay store, updates every 60 sim-seconds), `PredictionEnsemble` (BPR + ETS + Historical blended by `AdaptiveWeights`), `PredictionStore` (ArcSwap lock-free overlay), `PredictionOverlay` (per-edge travel times + confidence)
+- Depends on: arc-swap, serde, log
+- Used by: velos-gpu
 
 ## Data Flow
 
-**Simulation Frame Pipeline (280K agents, 2 GPUs, ~8.2ms total):**
+**Simulation Frame Pipeline (`SimWorld::tick_gpu`, 10 steps):**
 
-1. CPU: Partition boundary agent transfer (inbox/outbox staging buffers) - 0.1ms
-2. CPU/rayon: Per-lane leader sort (parallel per GPU) - 1.5ms
-3. GPU x2: Upload staging buffers - 0.3ms
-4. GPU x2: Lane-change desire computation (parallel, MOBIL for cars / sublane filtering for motorbikes) - 1.0ms
-5. GPU x2: Wave-front car-following IDM (sequential within lane, parallel across 50K lanes) - 2.0ms
-6. GPU x2: Pedestrian social force (adaptive workgroups, prefix-sum compaction) - 1.5ms
-7. CPU/rayon: CCH pathfinding (staggered ~500 reroutes/step, 0.02ms/query) - 0.5ms (parallel with GPU)
-8. CPU/rayon: Route advance + edge transitions (CFL-bounded, adaptive sub-stepping for short edges) - 0.3ms
-9. GPU->CPU: Download results - 0.3ms
-10. CPU: Prediction ensemble update (if due, every 60 sim-seconds, async via tokio::spawn) - 0.2ms
-11. CPU: Output recording + WebSocket broadcast (tile-based via Redis pub/sub) - 0.5ms
+1. `spawn_agents` -- create new agents from OD matrix + TodProfile demand
+2. `update_loop_detectors` -- feed detector readings to actuated signals
+3. `step_signals_with_detectors` -- advance signal controllers with detector data
+4. `step_signal_priority` -- process bus/emergency signal priority requests
+5. `step_glosa` -- GLOSA advisory speed reduction near non-green signals
+6. `step_perception` -- GPU perception gather + readback (edge awareness, signal state)
+7. `step_reroute` -- evaluate CCH rerouting from perception results
+8. `step_meso` -- mesoscopic queue tick + buffer zone insertion
+9. `step_lane_changes` -- MOBIL evaluation + lateral drift (CPU, cars)
+10. `step_vehicles_gpu` -- GPU wave-front car-following physics (IDM/Krauss per agent)
+11. `step_motorbikes_sublane` -- CPU lateral filtering for motorbikes
+12. `step_bus_dwell` -- bus dwell lifecycle at stops
+13. `step_prediction` -- prediction overlay refresh (every 60 sim-seconds)
+14. `step_pedestrians_gpu` -- GPU adaptive social force model
+15. `detect_gridlock` + `remove_finished_agents` + `update_metrics`
 
-Budget: 100ms (10 steps/sec at Dt=0.1s). Headroom: ~92ms (11x margin).
+**CPU Fallback Pipeline (`SimWorld::tick`):**
+- Same ordering but skips GPU perception/reroute
+- Uses `cpu_reference::step_vehicles()` and `cpu_reference::step_motorbikes_sublane()` instead of GPU dispatch
+- Used by integration tests that don't require a GPU device
+
+**Application Frame Loop (`GpuState::update` + `render`):**
+1. Compute frame dt from wall clock
+2. Call `SimWorld::tick_gpu()` with base_dt=0.016s (60 FPS target)
+3. Build agent instances (motorbikes, cars, pedestrians) + signal indicators
+4. Upload instances to GPU render buffers
+5. Render road lines + agents + egui UI overlay
+6. Present surface
 
 **Data Ingestion Flow:**
-
-1. OSM PBF -> `velos-net` NetworkImporter (HCMC-specific rules: one-way, motorbike lanes, U-turns) -> RoadGraph (~25K edges, ~15K junctions)
-2. Traffic counts / GPS probes -> `velos-demand` OD matrix + ToD profiles -> `velos-calibrate` GEH/RMSE tuning
-3. GTFS -> `velos-demand` BusRoute import (130 routes, headway + operating hours)
-4. Signal timing (field survey + inference) -> `velos-signal` JunctionControl plans
-
-**Prediction Update Flow:**
-
-1. Every 60 sim-seconds: `PredictionEnsemble::update()` runs async on tokio
-2. BPR physics + ETS error correction + historical pattern match -> weighted ensemble
-3. New `PredictionOverlay` atomically swapped via `ArcSwap` (zero-lock)
-4. CCH `customize()` called with new edge travel times (~3ms)
-5. Subsequent agent reroute queries use updated weights immediately
+1. OSM PBF -> `velos_net::import_osm()` with HCMC center coords (10.7756, 106.7019) -> `RoadGraph`
+2. Network cleaning -> `clean_network()` with optional override TOML
+3. Signal config -> `data/hcmc/signal_config.toml` -> polymorphic controllers (Fixed/Actuated/Adaptive)
+4. Vehicle params -> `data/hcmc/vehicle_params.toml` -> `VehicleConfig` -> GPU uniform buffer
+5. GTFS CSV -> `load_gtfs_csv()` -> bus stops snapped to network + `BusSpawner`
+6. OD matrix -> `OdMatrix::hcmc_5district()` hardcoded -> `Spawner` with `TodProfile::hcmc_weekday()`
 
 **State Management:**
-- ECS (hecs): All agent state as SoA component arrays
-- GPU buffers: Double-buffered (`AgentBufferPool` with front/back swap + fence sync)
-- Prediction: `Arc<ArcSwap<PredictionOverlay>>` for lock-free reads
-- Checkpoints: Parquet snapshots of all ECS components + JSON metadata (sim_time, RNG, signal states)
+- ECS (hecs): All agent state as components in `SimWorld.world`
+- GPU buffers: `BufferPool` with front/back double-buffering for position/kinematics
+- Wave-front dispatch: `ComputeDispatcher` owns agent, lane offset, lane count, lane agent index buffers
+- Perception: Shared `perception_result_buffer` between PerceptionPipeline (write) and wave_front.wgsl (read)
+- Prediction: `PredictionStore` with ArcSwap for lock-free overlay reads
 
 ## Key Abstractions
 
-**GpuPartition:**
-- Purpose: Encapsulates one GPU's slice of the simulation (device, queue, agent buffers, network subset, boundary staging)
-- Examples: `GpuPartition` struct in `crates/velos-gpu/`
-- Pattern: METIS k-way graph bisection assigns road segments to GPUs; boundary agents transfer via CPU-mediated inbox/outbox buffers (~64KB/step, negligible vs PCIe bandwidth)
+**SimWorld:**
+- Purpose: Central simulation state container -- owns ECS world, road graph, spawner, signal controllers, and all subsystems
+- Examples: `crates/velos-gpu/src/sim.rs`
+- Pattern: Monolithic struct with subsystem methods split across `sim_*.rs` files (sim_lifecycle, sim_vehicles, sim_signals, sim_pedestrians, sim_bus, sim_meso, sim_reroute, sim_perception, sim_render, sim_helpers, sim_startup, sim_snapshot)
 
-**AgentBufferPool:**
-- Purpose: Race-condition-free GPU buffer management via double buffering
-- Examples: `AgentBufferPool` struct in `crates/velos-gpu/`
-- Pattern: Front buffer read by GPU during dispatch, back buffer written by CPU; swap after fence wait
+**ComputeDispatcher:**
+- Purpose: Owns WGSL compute pipelines and GPU buffer management for agent physics
+- Examples: `crates/velos-gpu/src/compute.rs`, `crates/velos-gpu/src/compute_wave_front.rs`
+- Pattern: Three pipeline families -- legacy `agent_update.wgsl` (simple Euler), wave-front `wave_front.wgsl` (production IDM+Krauss), pedestrian adaptive `pedestrian_adaptive.wgsl` (social force)
 
-**CCHRouter:**
-- Purpose: Fast dynamic-weight pathfinding
-- Examples: `CCHRouter` in `crates/velos-net/`
-- Pattern: Immutable node ordering + shortcut topology (built once at startup, ~30s), mutable edge weights updated via bottom-up `customize()` pass (~3ms). Bidirectional Dijkstra queries at ~0.02ms each.
+**GpuAgentState:**
+- Purpose: 40-byte fixed-point GPU representation of agent state
+- Examples: `crates/velos-core/src/components.rs`
+- Pattern: `#[repr(C)]` Pod struct with fixed-point fields (edge_id, lane_idx, position Q16.16, lateral Q8.8, speed Q12.20, acceleration Q12.20, cf_model, rng_state, vehicle_type, flags bitfield)
 
-**PredictionEnsemble:**
-- Purpose: Edge travel time prediction without external Python process
-- Examples: `PredictionEnsemble` in `crates/velos-predict/`
-- Pattern: Three models (BPR, ETS, Historical) produce per-edge predictions; weighted mean + confidence stored in `PredictionOverlay`; atomic swap via `ArcSwap` for zero-lock consumption by routing layer
+**RoadGraph:**
+- Purpose: Directed graph of road network backed by petgraph DiGraph
+- Examples: `crates/velos-net/src/graph.rs`
+- Pattern: Wrapper around `DiGraph<RoadNode, RoadEdge>` with convenience methods. Supports serialization via postcard for caching.
 
-**ECS Component Layout:**
-- Purpose: SoA GPU-friendly agent data
-- Examples: `Position` (12 bytes), `Kinematics` (8 bytes), `IDMParams` (20 bytes), `LaneChangeState` (8 bytes), `LeaderIndex` (4 bytes) in `crates/velos-core/` and `crates/velos-vehicle/`
-- Pattern: Each component type maps to a contiguous GPU buffer. Total ~52 bytes/agent. 280K agents = ~14.6 MB VRAM.
+**PredictionService:**
+- Purpose: Manages prediction ensemble and lock-free overlay store
+- Examples: `crates/velos-predict/src/lib.rs`
+- Pattern: Owns `PredictionEnsemble` + `PredictionStore`. Checks `should_update()` every tick, recomputes BPR/ETS/Historical blend, atomically swaps `PredictionOverlay` via ArcSwap.
+
+**SignalController trait:**
+- Purpose: Polymorphic interface for all signal controller types
+- Examples: `crates/velos-signal/src/lib.rs`
+- Pattern: Trait with `tick()`, `get_phase_state()`, `reset()`, `spat_data()`, `request_priority()`. Implemented by `FixedTimeController`, `ActuatedController`, `AdaptiveController`.
+
+**CCH (Customizable Contraction Hierarchies):**
+- Purpose: Fast dynamic-weight shortest path queries
+- Examples: `crates/velos-net/src/cch/` (mod.rs, topology.rs, ordering.rs, customization.rs, query.rs, cache.rs)
+- Pattern: Build node ordering + shortcut topology once. Call `customize()` with new edge weights (~3ms). Bidirectional Dijkstra queries on contracted graph.
 
 ## Entry Points
 
-**Simulation Engine:**
-- Location: `crates/velos-core/` (main simulation loop)
-- Triggers: gRPC `Start`/`Step`/`Resume` calls from `velos-api`
-- Responsibilities: Orchestrates the 11-step frame pipeline, manages ECS world, coordinates multi-GPU dispatch
+**Binary Application (`velos-gpu`):**
+- Location: `crates/velos-gpu/src/main.rs`
+- Triggers: `cargo run -p velos-gpu`
+- Responsibilities: Creates winit EventLoop, instantiates `VelosApp`, runs event loop. On `resumed()`, creates window + GPU device + SimWorld. Frame loop: update sim -> render agents -> render egui -> present.
 
-**gRPC Server:**
-- Location: `crates/velos-api/` (tonic server on port 50051)
-- Triggers: External clients (dashboard, CLI, notebooks)
-- Responsibilities: Simulation lifecycle control, checkpoint management, agent CRUD, streaming (agent positions, edge stats), scenario management
-
-**REST Gateway:**
-- Location: `crates/velos-api/` (axum on port 8080)
-- Triggers: HTTP clients (dashboards, Jupyter notebooks)
-- Responsibilities: Convenience wrapper over gRPC for non-streaming use cases
-
-**WebSocket Relay:**
-- Location: `crates/velos-api/` (axum on port 8081)
-- Triggers: Browser dashboard connections
-- Responsibilities: Spatial-tile-based frame streaming via Redis pub/sub fan-out; FlatBuffers binary protocol at 10Hz
-
-**Dashboard:**
-- Location: `dashboard/` (deck.gl React app on port 3000)
-- Triggers: Browser navigation
-- Responsibilities: 2D visualization of 280K agents, heatmaps, flow arrows, signal states, KPI display, playback controls
+**CPU-only Test Path:**
+- Location: `SimWorld::new_cpu_only()` in `crates/velos-gpu/src/sim.rs`
+- Triggers: Integration tests that don't need GPU
+- Responsibilities: Creates SimWorld without GPU pipelines (perception=None, ped_adaptive=None). Uses `tick()` instead of `tick_gpu()`.
 
 ## Error Handling
 
-**Strategy:** Typed error enums per crate with gRPC error code mapping (13 defined error codes)
+**Strategy:** Per-crate error enums using `thiserror` derive macros
 
 **Patterns:**
-- gRPC: `VelosError` with `ErrorCode` enum (NETWORK_NOT_LOADED, SIMULATION_NOT_RUNNING, EDGE_NOT_FOUND, CAPACITY_EXCEEDED, GRIDLOCK_DETECTED, etc.) + string message + key-value details map
-- Gridlock detection: Tarjan SCC on stalled-agent dependency graph; resolution via teleport, reroute, or signal override
-- Numerical stability: CFL-bounded adaptive sub-stepping for short edges; edge transition guard clamps position at edge end if no capacity on next edge
-- Data validation: `DataValidator` checks network connectivity, edge lengths, speed limits, demand totals, zone-to-network mapping before simulation start
+- Each crate defines its own error type: `CoreError`, `GpuError`, `NetError`, `DemandError`, `MesoError`, `SignalError` (via `controller::ControllerError`), `VehicleError`
+- Fallback with logging: config loading falls back to defaults with `log::warn!()` (e.g., vehicle config, signal config, zone config)
+- GPU operations use `Option<T>` for pipelines that may not exist in CPU-only mode (perception, ped_adaptive)
+- No panic-on-error in production paths -- graceful degradation with warnings
 
 ## Cross-Cutting Concerns
 
-**Logging:** `tracing` crate with structured fields (step, sim_time, agent_count, frame_time_ms, gpu_time_ms, reroute_count). `#[instrument]` attribute on key functions.
+**Logging:** `log` crate with `env_logger`. Default filter: `warn`. Key log points: OSM import stats, signal controller counts, OD trip rates, zone config loading, spawn caps.
 
-**Validation:** `DataValidator` struct validates network graph (connectivity, edge lengths, speed limits) and demand (total trips, zone mapping) before simulation. GEH statistic validates simulation output against real traffic counts.
+**Validation:** Zone centroids validated against graph node proximity at startup (warns if no nodes within 2km). CFL checks via `cfl_check()` in velos-core for numerical stability.
 
-**Authentication:** API key header for gRPC/REST (simple, POC-scope). All services on private Docker network; only ports 3000, 8080, 50051 exposed.
+**Configuration:** TOML files in `data/hcmc/` for vehicle params, signal config, network overrides. Environment variable override: `VELOS_VEHICLE_CONFIG` for vehicle params path. Zone config loaded from `data/hcmc/zone_config.toml` (or defaults if missing).
 
-**Monitoring:** Prometheus metrics (`SimMetrics`: frame_time_ms histogram, agent_count gauge, gridlock_events counter, etc.) + Grafana dashboards. Alert rules for frame time p99 > 15ms, gridlock spikes, GPU VRAM > 85%.
+**Determinism:** Fixed-point arithmetic in GPU shaders (`fixed_point.wgsl`). CPU-side uses f64 for precision. PCG hash RNG state per agent in `GpuAgentState.rng_state` for Krauss stochastic component. Simulation seeded with `StdRng::seed_from_u64(123)`.
 
-**Determinism:** Fixed-point integer arithmetic (Q16.16 position, Q12.20 speed) in WGSL shaders with manual 64-bit emulation. `@invariant` attribute fallback if fixed-point performance is unacceptable (~20% overhead).
+**Performance:** Workgroup size 256 for GPU compute. Pre-allocated buffers for 300K agents. Spawn cap of 50 agents/tick to control growth. Base OD matrix produces ~140K trips/hr (previous 3x multiplier removed due to performance regression).
 
 ---
 
-*Architecture analysis: 2026-03-06*
+*Architecture analysis: 2026-03-09*
