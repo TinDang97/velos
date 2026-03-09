@@ -7,19 +7,31 @@
 
 Requirements for Digital Twin milestone. Each maps to roadmap phases.
 
-### Camera Detection
+### Intersection Sublane
 
-- [ ] **CAM-01**: User can load video files as camera feed source for detection
-- [ ] **CAM-02**: System detects vehicles (car, motorbike, bus, truck) and pedestrians from camera frames using YOLO + ONNX
-- [ ] **CAM-03**: System counts detected objects per class crossing virtual detection lines per camera
-- [ ] **CAM-04**: User can map cameras to simulation network edges/junctions via config
-- [ ] **CAM-05**: User can see camera positions and FOV coverage areas overlaid on the map
+- [ ] **ISL-01**: Vehicles maintain continuous lateral position through junction internal edges (not reset to lane center)
+- [ ] **ISL-02**: Motorbikes can filter and weave through intersection areas using probe-based gap scanning
+- [ ] **ISL-03**: Turn geometry supports sublane positioning (curved paths through intersections with lateral offset)
+- [ ] **ISL-04**: Conflict detection at crossing points within junctions resolves priority between sublane-positioned agents
+
+### 2D Map Rendering
+
+- [ ] **MAP-01**: Self-hosted 2D vector map tiles from OSM render as background layer in the simulation view
+- [ ] **MAP-02**: Sublane positions are visually rendered in 2D — vehicles show lateral offsets through intersections with lane marking context
+
+### Detection Ingestion
+
+- [ ] **DET-01**: System exposes gRPC service accepting vehicle/pedestrian detection events from external CV services
+- [ ] **DET-02**: System aggregates received detections into per-class counts per camera over configurable time windows
+- [ ] **DET-03**: User can register cameras with position, FOV, and network edge/junction mapping via gRPC or config
+- [ ] **DET-04**: User can see camera positions and FOV coverage areas overlaid on the map
+- [ ] **DET-05**: System accepts speed estimation data from external CV services per camera
+- [ ] **DET-06**: Python and Rust client libraries connect to VELOS gRPC detection service for integration testing
 
 ### Calibration
 
 - [ ] **CAL-01**: System adjusts simulation demand (OD spawn rates) based on observed vs simulated counts
-- [ ] **CAL-02**: System continuously calibrates demand during a running simulation from streaming camera counts
-- [ ] **CAL-03**: System estimates vehicle speeds from camera footage for speed-based validation
+- [ ] **CAL-02**: System continuously calibrates demand during a running simulation from streaming detection data
 
 ### 3D Rendering
 
@@ -35,11 +47,16 @@ Requirements for Digital Twin milestone. Each maps to roadmap phases.
 
 Deferred to future release. Tracked but not in current roadmap.
 
-### Camera Enhancement
+### Built-in CV Detection
 
-- **CAM-06**: System connects to live RTSP camera streams for real-time detection
-- **CAM-07**: System fine-tunes YOLO model on HCMC-specific motorbike/vehicle data
-- **CAM-08**: System re-identifies vehicles across multiple cameras for trajectory reconstruction
+- **CV-01**: System runs YOLO inference in-process via ort crate for self-contained detection
+- **CV-02**: System ingests RTSP camera streams directly for real-time detection
+- **CV-03**: System fine-tunes YOLO model on HCMC-specific motorbike/vehicle data
+
+### Detection Analytics
+
+- **DAN-01**: Detection confidence heatmap overlay shows camera coverage strength per edge
+- **DAN-02**: Cross-camera vehicle re-identification for trajectory reconstruction
 
 ### 3D Enhancement
 
@@ -47,48 +64,50 @@ Deferred to future release. Tracked but not in current roadmap.
 - **R3D-09**: Buildings render with PBR materials (normal/roughness/metallic maps)
 - **R3D-10**: Scene includes vegetation and street furniture (trees, streetlights)
 
-### Detection Analytics
-
-- **DET-01**: Detection confidence heatmap overlay shows camera coverage strength per edge
-- **DET-02**: GPU-accelerated YOLO inference via Metal Performance Shaders
-
 ## Out of Scope
 
 | Feature | Reason |
 |---------|--------|
-| Real-time video overlay in 3D scene | Video decode per camera per frame is expensive; detection results overlay is sufficient |
-| Automatic camera calibration | Unsolved at production quality; manual config is reliable and one-time |
-| Cross-camera vehicle ReID | Massive ML complexity for marginal calibration value; per-camera counts sufficient |
+| Built-in YOLO inference | Detection runs in external services; VELOS consumes results via gRPC |
+| Video decoding / RTSP ingestion | External CV services handle camera feeds; VELOS receives structured detection data |
+| Real-time video overlay in 3D scene | Detection results overlay is sufficient; video decode per camera is expensive |
+| Automatic camera calibration | Unsolved at production quality; manual registration is reliable |
+| Cross-camera vehicle ReID | Massive ML complexity for marginal calibration value |
 | Photorealistic PBR rendering | Multiple render passes + texture memory at 280K agents + 50K buildings exceeds GPU budget |
 | CityGML/3DTiles from external source | No CityGML dataset exists for HCMC; OSM extrusion is available and sufficient |
 | Browser-based web viewer | VELOS is a native wgpu app; no webview/CesiumJS/deck.gl in v1.2 |
-| Python ML sidecar | All inference runs in-process via ort crate; no Python bridge |
 
 ## Traceability
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| CAM-01 | — | Pending |
-| CAM-02 | — | Pending |
-| CAM-03 | — | Pending |
-| CAM-04 | — | Pending |
-| CAM-05 | — | Pending |
-| CAL-01 | — | Pending |
-| CAL-02 | — | Pending |
-| CAL-03 | — | Pending |
-| R3D-01 | — | Pending |
-| R3D-02 | — | Pending |
-| R3D-03 | — | Pending |
-| R3D-04 | — | Pending |
-| R3D-05 | — | Pending |
-| R3D-06 | — | Pending |
-| R3D-07 | — | Pending |
+| ISL-01 | Phase 16 | Pending |
+| ISL-02 | Phase 16 | Pending |
+| ISL-03 | Phase 16 | Pending |
+| ISL-04 | Phase 16 | Pending |
+| MAP-01 | Phase 16 | Pending |
+| MAP-02 | Phase 16 | Pending |
+| DET-01 | Phase 17 | Pending |
+| DET-02 | Phase 17 | Pending |
+| DET-03 | Phase 17 | Pending |
+| DET-04 | Phase 17 | Pending |
+| DET-05 | Phase 17 | Pending |
+| DET-06 | Phase 17 | Pending |
+| CAL-01 | Phase 17 | Pending |
+| CAL-02 | Phase 20 | Pending |
+| R3D-01 | Phase 18 | Pending |
+| R3D-02 | Phase 18 | Pending |
+| R3D-03 | Phase 18 | Pending |
+| R3D-04 | Phase 18 | Pending |
+| R3D-05 | Phase 18 | Pending |
+| R3D-06 | Phase 19 | Pending |
+| R3D-07 | Phase 19 | Pending |
 
 **Coverage:**
-- v1.2 requirements: 15 total
-- Mapped to phases: 0
-- Unmapped: 15 ⚠️
+- v1.2 requirements: 21 total
+- Mapped to phases: 21
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-03-09*
-*Last updated: 2026-03-09 after initial definition*
+*Last updated: 2026-03-09 (revision 2 -- ISL requirements added, all 19 mapped to phases 16-20)*
