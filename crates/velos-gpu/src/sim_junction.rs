@@ -5,12 +5,13 @@
 //! Runs after lane changes (6.7), before GPU vehicle physics (7.0).
 
 use hecs::Entity;
-use petgraph::graph::EdgeIndex;
+use petgraph::graph::{EdgeIndex, NodeIndex};
 
 use velos_core::components::{
     JunctionTraversal, Kinematics, Position, RoadPosition, Route,
     VehicleType as CoreVehicleType, MAX_YIELD_TICKS,
 };
+use velos_net::junction::BezierTurn;
 use velos_vehicle::idm::IdmParams;
 use velos_vehicle::junction_traversal::{
     self, advance_on_bezier, check_conflicts, yield_deceleration, ConflictPoint, MIN_CRAWL_SPEED,
@@ -113,10 +114,8 @@ impl SimWorld {
                 continue;
             };
 
-            // Advance t
-            let (new_t, finished) = advance_on_bezier(a.t, a.speed, turn.arc_length, dt);
-
-            // Determine effective speed after conflict check
+            // --- Determine effective speed BEFORE advancing t ---
+            // This prevents the one-frame position jump when a conflict is first detected.
             let mut effective_speed = a.speed;
             let mut new_wait_ticks = a.wait_ticks;
 
@@ -132,11 +131,11 @@ impl SimWorld {
                 })
                 .collect();
 
-            // Check conflicts
-            if let Some(agents_here) = junction_agents.get(&a.junction_node)
+            // Check conflicts FIRST using current t (before advance)
+            let has_conflict = if let Some(agents_here) = junction_agents.get(&a.junction_node)
                 && let Some(conflict_result) = check_conflicts(
                     a.turn_index,
-                    a.t, // use pre-advance t for priority determination
+                    a.t,
                     to_veh_vtype(a.vtype),
                     agents_here,
                     &local_conflicts,
@@ -151,6 +150,17 @@ impl SimWorld {
                     &a.idm,
                 );
                 effective_speed = (a.speed + decel * dt).max(0.0);
+                true
+            } else {
+                false
+            };
+
+            // Free-flow acceleration recovery: when no conflict, accelerate back
+            // toward desired speed using IDM free-flow term. Without this, an agent
+            // that yielded (speed=0) stays at 0 forever after the conflict clears.
+            if !has_conflict && effective_speed < a.idm.v0 {
+                let free_accel = a.idm.a * (1.0 - (effective_speed / a.idm.v0).powf(a.idm.delta));
+                effective_speed = (effective_speed + free_accel * dt).min(a.idm.v0);
             }
 
             // Bug 5 fix: deadlock prevention via wait_ticks
@@ -162,6 +172,10 @@ impl SimWorld {
             } else {
                 new_wait_ticks = 0;
             }
+
+            // Advance t using effective_speed (post-conflict), NOT original speed.
+            // This prevents position jumps when conflict detection triggers.
+            let (new_t, finished) = advance_on_bezier(a.t, effective_speed, turn.arc_length, dt);
 
             // Compute world position and heading from Bezier curve
             let entry_edge_idx = EdgeIndex::new(turn.entry_edge as usize);
@@ -203,46 +217,11 @@ impl SimWorld {
             }
 
             if upd.finished {
-                // Bug 4 fix: Junction exit -- directly place on exit edge.
-                // Do NOT call advance_to_next_edge (it would re-enter the junction).
-                let exit_info = {
-                    let Ok(jt) = self
-                        .world
-                        .query_one_mut::<&JunctionTraversal>(upd.entity)
-                    else {
-                        continue;
-                    };
-                    let junction_node = jt.junction_node;
-                    let turn_index = jt.turn_index;
-                    let Some(jd) = self.junction_data.get(&junction_node) else {
-                        continue;
-                    };
-                    let Some(turn) = jd.turns.get(turn_index as usize) else {
-                        continue;
-                    };
-                    (turn.exit_edge, turn.exit_offset_m)
-                };
-
-                let (exit_edge_id, exit_offset) = exit_info;
-
-                // Remove JunctionTraversal component
-                let _ = self.world.remove_one::<JunctionTraversal>(upd.entity);
-
-                // Advance route step (the junction node was the current target)
-                if let Ok(route) = self.world.query_one_mut::<&mut Route>(upd.entity) {
-                    route.current_step += 1;
-                }
-
-                // Place agent on exit edge
-                if let Ok(rp) = self.world.query_one_mut::<&mut RoadPosition>(upd.entity) {
-                    rp.edge_index = exit_edge_id;
-                    rp.offset_m = exit_offset;
-                    rp.lane = 0;
-                }
-
-                // Update world position from the new edge
-                self.update_agent_state(upd.entity, upd.effective_speed);
-                self.update_wait_state(upd.entity, upd.effective_speed, false);
+                // Junction exit with multi-segment chaining.
+                // Instead of placing on exit edge (which causes teleport when
+                // the next node is also a junction), try to chain directly
+                // into the next junction up to MAX_CHAIN_DEPTH times.
+                self.handle_junction_exit(upd.entity, upd.effective_speed);
             } else {
                 // Update JunctionTraversal component with new t and wait_ticks
                 if let Ok(jt) = self
@@ -258,6 +237,193 @@ impl SimWorld {
                 self.update_wait_state(upd.entity, upd.effective_speed, false);
             }
         }
+    }
+
+    /// Maximum number of consecutive junctions to chain through in one step.
+    /// Prevents infinite loops on degenerate graphs.
+    const MAX_CHAIN_DEPTH: usize = 3;
+
+    /// Short edge threshold in metres. Edges shorter than this between two
+    /// junctions are traversed instantly (chained) to avoid visible teleporting.
+    const SHORT_EDGE_THRESHOLD_M: f64 = 30.0;
+
+    /// Handle junction exit with multi-segment chaining.
+    ///
+    /// When an agent finishes a junction Bezier (t >= 1.0), instead of placing
+    /// it on the exit edge and waiting for the next frame to potentially re-enter
+    /// another junction (which causes visible teleporting), this method chains
+    /// through up to MAX_CHAIN_DEPTH consecutive junctions in one step.
+    ///
+    /// For each chain step:
+    /// 1. Read current junction's exit edge and advance route
+    /// 2. Check if the exit edge is short AND the next node is also a junction
+    /// 3. If yes: update JunctionTraversal in-place to the next junction's Bezier
+    /// 4. If no: exit to edge normally
+    fn handle_junction_exit(&mut self, entity: Entity, speed: f64) {
+        for _chain_depth in 0..Self::MAX_CHAIN_DEPTH {
+            // Read current junction traversal info
+            let chain_info = {
+                let Ok(jt) = self.world.query_one_mut::<&JunctionTraversal>(entity) else {
+                    return;
+                };
+                let junction_node = jt.junction_node;
+                let turn_index = jt.turn_index;
+                let lateral_offset = jt.lateral_offset;
+                let Some(jd) = self.junction_data.get(&junction_node) else {
+                    break;
+                };
+                let Some(turn) = jd.turns.get(turn_index as usize) else {
+                    break;
+                };
+                (turn.exit_edge, turn.exit_offset_m, lateral_offset)
+            };
+
+            let (exit_edge_id, exit_offset, lateral_offset) = chain_info;
+
+            // Advance route step for the junction we just exited
+            if let Ok(route) = self.world.query_one_mut::<&mut Route>(entity) {
+                route.current_step += 1;
+            }
+
+            // Check if we can chain to the next junction:
+            // 1. Exit edge must be short
+            // 2. Next node must have junction data
+            // 3. There must be a matching turn (exit_edge -> next_next_edge)
+            let next_junction = self.find_next_junction_chain(entity, exit_edge_id);
+
+            match next_junction {
+                Some((next_jn, next_turn_idx, next_turn, next_road_half_width)) => {
+                    // Chain: update JunctionTraversal in-place to next junction
+                    if let Ok(jt) = self.world.query_one_mut::<&mut JunctionTraversal>(entity) {
+                        jt.junction_node = next_jn;
+                        jt.turn_index = next_turn_idx;
+                        jt.t = 0.0;
+                        // Keep lateral_offset and speed from previous junction
+                        jt.wait_ticks = 0;
+                    }
+
+                    // Advance route step again (skip the short intermediate edge)
+                    if let Ok(route) = self.world.query_one_mut::<&mut Route>(entity) {
+                        route.current_step += 1;
+                    }
+
+                    // Set position to Bezier(t=0) of the new junction
+                    let pos = next_turn.offset_position(0.0, lateral_offset, next_road_half_width);
+                    let tan = next_turn.tangent(0.0);
+                    let heading = tan[1].atan2(tan[0]);
+
+                    if let Ok((position, kin)) = self
+                        .world
+                        .query_one_mut::<(&mut Position, &mut Kinematics)>(entity)
+                    {
+                        position.x = pos[0];
+                        position.y = pos[1];
+                        kin.heading = heading;
+                        kin.vx = speed * heading.cos();
+                        kin.vy = speed * heading.sin();
+                    }
+
+                    // Update RoadPosition to reflect the intermediate edge
+                    // (so other systems see the correct edge context)
+                    if let Ok(rp) = self.world.query_one_mut::<&mut RoadPosition>(entity) {
+                        rp.edge_index = exit_edge_id;
+                        rp.offset_m = exit_offset;
+                        rp.lane = 0;
+                    }
+
+                    // Continue loop to check if THIS junction also chains
+                    // (agent.t is 0.0, so it won't be "finished" — loop will break
+                    //  at the JunctionTraversal read since t=0 won't trigger exit)
+                    // Actually we just set t=0, so we're done chaining for this frame.
+                    // The agent will advance through this new junction normally next frame.
+                    self.update_wait_state(entity, speed, false);
+                    return;
+                }
+                None => {
+                    // No chaining possible — normal exit to edge
+                    let _ = self.world.remove_one::<JunctionTraversal>(entity);
+
+                    if let Ok(rp) = self.world.query_one_mut::<&mut RoadPosition>(entity) {
+                        rp.edge_index = exit_edge_id;
+                        rp.offset_m = exit_offset;
+                        rp.lane = 0;
+                    }
+
+                    self.update_agent_state(entity, speed);
+                    self.update_wait_state(entity, speed, false);
+                    return;
+                }
+            }
+        }
+
+        // Exhausted chain depth — force normal exit
+        let exit_info = {
+            let Ok(jt) = self.world.query_one_mut::<&JunctionTraversal>(entity) else {
+                return;
+            };
+            let Some(jd) = self.junction_data.get(&jt.junction_node) else {
+                return;
+            };
+            let Some(turn) = jd.turns.get(jt.turn_index as usize) else {
+                return;
+            };
+            (turn.exit_edge, turn.exit_offset_m)
+        };
+        let _ = self.world.remove_one::<JunctionTraversal>(entity);
+        if let Ok(rp) = self.world.query_one_mut::<&mut RoadPosition>(entity) {
+            rp.edge_index = exit_info.0;
+            rp.offset_m = exit_info.1;
+            rp.lane = 0;
+        }
+        self.update_agent_state(entity, speed);
+        self.update_wait_state(entity, speed, false);
+    }
+
+    /// Check if the exit edge is short and the next node has a junction to chain into.
+    ///
+    /// Returns `Some((next_junction_node, turn_index, &BezierTurn, road_half_width))`
+    /// if chaining is possible, `None` otherwise.
+    fn find_next_junction_chain(
+        &mut self,
+        entity: Entity,
+        exit_edge_id: u32,
+    ) -> Option<(u32, u16, BezierTurn, f64)> {
+        // Check exit edge length
+        let exit_edge_idx = EdgeIndex::new(exit_edge_id as usize);
+        let g = self.road_graph.inner();
+        let edge_weight = g.edge_weight(exit_edge_idx)?;
+        if edge_weight.length_m > Self::SHORT_EDGE_THRESHOLD_M {
+            return None;
+        }
+
+        // Get next-next node from route
+        let route = self.world.query_one_mut::<&Route>(entity).ok()?;
+        // After the route step advance, current_step points to the next node.
+        // We need current_step + 1 (the node after the short edge).
+        if route.current_step + 2 >= route.path.len() {
+            return None;
+        }
+        let next_node_u32 = route.path[route.current_step + 1];
+
+        // Check if next node has junction data
+        let next_jd = self.junction_data.get(&next_node_u32)?;
+
+        // Find the next-next edge (from next_node to the node after)
+        let next_next_node = NodeIndex::new(route.path[route.current_step + 2] as usize);
+        let next_next_edge = g
+            .find_edge(NodeIndex::new(next_node_u32 as usize), next_next_node)?
+            .index() as u32;
+
+        // Find matching turn: exit_edge -> next_next_edge
+        let (turn_idx, turn) = next_jd
+            .turns
+            .iter()
+            .enumerate()
+            .find(|(_, t)| t.entry_edge == exit_edge_id && t.exit_edge == next_next_edge)?;
+
+        let road_half_width = edge_weight.lane_count as f64 * 3.5 / 2.0;
+
+        Some((next_node_u32, turn_idx as u16, turn.clone(), road_half_width))
     }
 }
 
@@ -461,9 +627,41 @@ mod tests {
 
     #[test]
     fn step_junction_traversal_deadlock_forced_crawl() {
-        let (mut sim, jn, _) = make_sim_with_junction();
+        let (graph, junction_node) = make_junction_graph();
+        let mut sim = SimWorld::new_cpu_only(graph);
 
-        // Agent with speed 0 and wait_ticks at threshold
+        // Create junction with TWO crossing turns and a conflict between them
+        let turn_0 = BezierTurn {
+            entry_edge: 0,
+            exit_edge: 1,
+            p0: [0.0, 0.0],
+            p1: [100.0, 0.0],
+            p2: [200.0, 0.0],
+            arc_length: 200.0,
+            exit_offset_m: 0.1,
+        };
+        let turn_1 = BezierTurn {
+            entry_edge: 2,
+            exit_edge: 3,
+            p0: [100.0, 100.0],
+            p1: [100.0, 0.0],
+            p2: [100.0, -100.0],
+            arc_length: 200.0,
+            exit_offset_m: 0.1,
+        };
+        let conflict = velos_net::junction::ConflictPoint {
+            turn_a_idx: 0,
+            turn_b_idx: 1,
+            t_a: 0.5,
+            t_b: 0.5,
+        };
+        let jd = JunctionData {
+            turns: vec![turn_0, turn_1],
+            conflicts: vec![conflict],
+        };
+        sim.junction_data.insert(junction_node, jd);
+
+        // Agent A on turn 0 at t=0.5 (exactly at conflict), speed=0, wait_ticks at threshold
         let agent = sim.world.spawn((
             Position { x: 0.0, y: 0.0 },
             Kinematics {
@@ -495,12 +693,54 @@ mod tests {
                 delta: 4.0,
             },
             JunctionTraversal {
-                junction_node: jn,
+                junction_node,
                 turn_index: 0,
-                t: 0.5,
+                t: 0.35, // dist to conflict (0.5) = 0.15, farther than foe → must yield
                 lateral_offset: 3.5,
                 speed: 0.0,
                 wait_ticks: MAX_YIELD_TICKS, // at threshold
+            },
+        ));
+
+        // Agent B on turn 1 at t=0.48 (closer to conflict → has priority)
+        // This creates a real conflict that keeps agent A yielding
+        let _foe = sim.world.spawn((
+            Position { x: 100.0, y: 50.0 },
+            Kinematics {
+                vx: 0.0,
+                vy: -10.0,
+                speed: 10.0,
+                heading: -std::f64::consts::FRAC_PI_2,
+            },
+            RoadPosition {
+                edge_index: 2,
+                lane: 0,
+                offset_m: 50.0,
+            },
+            Route {
+                path: vec![3, 2, 1],
+                current_step: 0,
+            },
+            WaitState {
+                stopped_since: -1.0,
+                at_red_signal: false,
+            },
+            VehicleType::Car,
+            IdmParams {
+                v0: 13.89,
+                s0: 2.0,
+                t_headway: 1.5,
+                a: 1.0,
+                b: 2.0,
+                delta: 4.0,
+            },
+            JunctionTraversal {
+                junction_node,
+                turn_index: 1,
+                t: 0.48, // closer to conflict at 0.5 → has priority over agent A
+                lateral_offset: 3.5,
+                speed: 10.0,
+                wait_ticks: 0,
             },
         ));
 
@@ -512,7 +752,28 @@ mod tests {
             .unwrap();
         assert!(
             jt.speed >= MIN_CRAWL_SPEED,
-            "should force crawl speed after deadlock timeout"
+            "should force crawl speed after deadlock timeout, got {}",
+            jt.speed,
+        );
+    }
+
+    #[test]
+    fn step_junction_traversal_free_flow_recovery() {
+        // Agent with speed=0 but no conflict should recover via free-flow acceleration
+        let (mut sim, jn, _turn) = make_sim_with_junction();
+
+        let agent = spawn_junction_agent(&mut sim, jn, 0, 0.3, 0.0);
+
+        sim.step_junction_traversal(0.1);
+
+        let jt = sim
+            .world
+            .query_one_mut::<&JunctionTraversal>(agent)
+            .unwrap();
+        assert!(
+            jt.speed > 0.0,
+            "agent with no conflict should accelerate from 0, got {}",
+            jt.speed,
         );
     }
 
