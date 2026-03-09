@@ -2,10 +2,10 @@
 gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Digital Twin
-status: active
-stopped_at: Roadmap revision 2 complete (added intersection sublane phase), ready to plan Phase 16
-last_updated: "2026-03-09T00:00:00.000Z"
-last_activity: "2026-03-09 -- v1.2 roadmap revision 2 (19 requirements across 5 phases, ISL-01..04 added as foundation)"
+status: planning
+stopped_at: Phase 16 context gathered
+last_updated: "2026-03-09T05:08:58.127Z"
+last_activity: 2026-03-09 -- v1.2 roadmap revision 2 (added intersection sublane foundation phase)
 progress:
   total_phases: 5
   completed_phases: 0
@@ -57,6 +57,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-09
-Stopped at: v1.2 roadmap revision 2 complete, ready to plan Phase 16
-Resume file: None
+Last session: 2026-03-09T05:08:58.125Z
+Stopped at: Phase 16 context gathered
+Resume file: .planning/phases/16-intersection-sublane-model/16-CONTEXT.md
