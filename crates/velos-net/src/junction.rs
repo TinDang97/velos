@@ -19,8 +19,7 @@ const MIN_ARC_LENGTH_M: f64 = 0.3;
 /// Number of sample points for arc-length estimation.
 const ARC_LENGTH_SAMPLES: usize = 10;
 
-/// Bezier control point tension: 0.0 = straight line, 1.0 = full centroid.
-const BEZIER_TENSION: f64 = 0.3;
+// BEZIER_TENSION removed — P1 is now computed so B(0.5) = centroid exactly.
 
 /// Junction curve radius in metres. P0/P2 are placed this far from the junction
 /// centroid along approach/departure directions, keeping curves short (~2*radius)
@@ -53,8 +52,13 @@ pub struct BezierTurn {
     /// Approximate arc length in metres (precomputed).
     pub arc_length: f64,
     /// Offset in metres on the exit edge where the agent should be placed
-    /// after completing junction traversal. Avoids edge-boundary issues at offset=0.
+    /// after completing junction traversal. Matches P2's projection on the
+    /// exit edge (~departure radius) so there is no position discontinuity.
     pub exit_offset_m: f64,
+    /// Bezier t-parameter where the curve passes closest to the junction
+    /// centroid. Agents start here (not t=0) so their position matches the
+    /// edge endpoint, eliminating the ~15m backward teleport on entry.
+    pub entry_t: f64,
 }
 
 impl BezierTurn {
@@ -201,6 +205,27 @@ pub fn find_conflict_point(
     }
 }
 
+/// Find the t-parameter on a Bezier curve closest to a target point.
+///
+/// Uses grid search with `samples` steps. Called once per turn at network load.
+fn find_closest_t(turn: &BezierTurn, target: [f64; 2], samples: usize) -> f64 {
+    let mut best_t = 0.0;
+    let mut best_dist_sq = f64::MAX;
+    let inv = 1.0 / samples.max(1) as f64;
+    for i in 0..=samples {
+        let t = i as f64 * inv;
+        let pos = turn.position(t);
+        let dx = pos[0] - target[0];
+        let dy = pos[1] - target[1];
+        let dist_sq = dx * dx + dy * dy;
+        if dist_sq < best_dist_sq {
+            best_dist_sq = dist_sq;
+            best_t = t;
+        }
+    }
+    best_t
+}
+
 /// Precompute all Bezier turns and conflict points for a single junction node.
 ///
 /// Iterates all (incoming, outgoing) edge pairs, skipping U-turns (where the
@@ -255,11 +280,14 @@ pub fn precompute_junction(
                 centroid
             };
 
-            // Tension-weighted control point between straight-line midpoint and centroid.
-            let midpoint = [(p0[0] + p2[0]) / 2.0, (p0[1] + p2[1]) / 2.0];
+            // Compute P1 so the quadratic Bezier passes through the junction
+            // centroid at t=0.5.  For B(0.5) = 0.25*P0 + 0.5*P1 + 0.25*P2,
+            // solving for B(0.5) = centroid gives P1 = 2*C - 0.5*(P0+P2).
+            // This eliminates the entry/exit teleport: agents enter from the
+            // edge at the centroid and Bezier(entry_t≈0.5) IS the centroid.
             let p1 = [
-                midpoint[0] + BEZIER_TENSION * (centroid[0] - midpoint[0]),
-                midpoint[1] + BEZIER_TENSION * (centroid[1] - midpoint[1]),
+                2.0 * centroid[0] - 0.5 * (p0[0] + p2[0]),
+                2.0 * centroid[1] - 0.5 * (p0[1] + p2[1]),
             ];
 
             let arc_length = estimate_arc_length(&p0, &p1, &p2, ARC_LENGTH_SAMPLES);
@@ -269,15 +297,18 @@ pub fn precompute_junction(
                 continue;
             }
 
-            turns.push(BezierTurn {
+            let mut turn = BezierTurn {
                 entry_edge: inc.id().index() as u32,
                 exit_edge: out.id().index() as u32,
                 p0,
                 p1,
                 p2,
                 arc_length,
-                exit_offset_m: 0.1,
-            });
+                exit_offset_m: radius2.max(0.1),
+                entry_t: 0.0, // placeholder, computed below
+            };
+            turn.entry_t = find_closest_t(&turn, centroid, ARC_LENGTH_SAMPLES);
+            turns.push(turn);
         }
     }
 
@@ -408,6 +439,7 @@ mod tests {
             p2: [100.0, 0.0],
             arc_length: 120.0,
             exit_offset_m: 0.1,
+            entry_t: 0.0,
         };
         let pos = turn.position(0.0);
         assert!((pos[0] - 0.0).abs() < 1e-10);
@@ -424,6 +456,7 @@ mod tests {
             p2: [100.0, 0.0],
             arc_length: 120.0,
             exit_offset_m: 0.1,
+            entry_t: 0.0,
         };
         let pos = turn.position(1.0);
         assert!((pos[0] - 100.0).abs() < 1e-10);
@@ -440,6 +473,7 @@ mod tests {
             p2: [100.0, 0.0],
             arc_length: 120.0,
             exit_offset_m: 0.1,
+            entry_t: 0.0,
         };
         let pos = turn.position(0.5);
         // B(0.5) = 0.25*P0 + 0.5*P1 + 0.25*P2
@@ -461,6 +495,7 @@ mod tests {
             p2: [100.0, 0.0],
             arc_length: 120.0,
             exit_offset_m: 0.1,
+            entry_t: 0.0,
         };
         let tan = turn.tangent(0.0);
         // B'(0) = 2(P1 - P0) = 2*(50,50) = (100, 100)
@@ -478,6 +513,7 @@ mod tests {
             p2: [100.0, 0.0],
             arc_length: 120.0,
             exit_offset_m: 0.1,
+            entry_t: 0.0,
         };
         let tan = turn.tangent(1.0);
         // B'(1) = 2(P2 - P1) = 2*(50, -50) = (100, -100)
@@ -500,6 +536,7 @@ mod tests {
             p2: [100.0, 0.0],
             arc_length: 100.0,
             exit_offset_m: 0.1,
+            entry_t: 0.0,
         };
 
         let half_width = 3.5;
@@ -561,6 +598,7 @@ mod tests {
             p2: [100.0, 50.0],
             arc_length: 100.0,
             exit_offset_m: 0.1,
+            entry_t: 0.0,
         };
         let turn_b = BezierTurn {
             entry_edge: 2,
@@ -570,6 +608,7 @@ mod tests {
             p2: [50.0, 100.0],
             arc_length: 100.0,
             exit_offset_m: 0.1,
+            entry_t: 0.0,
         };
         let result = find_conflict_point(&turn_a, &turn_b, 30);
         assert!(result.is_some(), "crossing paths should produce a conflict point");
@@ -590,6 +629,7 @@ mod tests {
             p2: [100.0, 0.0],
             arc_length: 100.0,
             exit_offset_m: 0.1,
+            entry_t: 0.0,
         };
         let turn_b = BezierTurn {
             entry_edge: 2,
@@ -599,6 +639,7 @@ mod tests {
             p2: [100.0, 50.0],
             arc_length: 100.0,
             exit_offset_m: 0.1,
+            entry_t: 0.0,
         };
         let result = find_conflict_point(&turn_a, &turn_b, 30);
         assert!(result.is_none(), "parallel paths 50m apart should not conflict");
@@ -618,6 +659,7 @@ mod tests {
             p2: [100.0, 0.0],
             arc_length: 120.0,
             exit_offset_m: 0.1,
+            entry_t: 0.0,
         };
         let result = find_conflict_point(&turn, &turn, 30);
         // Same curve: distance is 0, within threshold -> returns Some
@@ -639,7 +681,8 @@ mod tests {
         // All turns should have positive arc length
         for turn in &data.turns {
             assert!(turn.arc_length >= MIN_ARC_LENGTH_M);
-            assert_eq!(turn.exit_offset_m, 0.1);
+            // exit_offset_m matches the departure radius (~15m for 100m edges)
+            assert!(turn.exit_offset_m > 0.1, "exit_offset_m should be radius, got {}", turn.exit_offset_m);
         }
     }
 
@@ -763,6 +806,7 @@ mod tests {
             p2: [0.0, 0.0],
             arc_length: 0.0,
             exit_offset_m: 0.1,
+            entry_t: 0.0,
         };
         let normal = BezierTurn {
             entry_edge: 2,
@@ -772,6 +816,7 @@ mod tests {
             p2: [100.0, 0.0],
             arc_length: 120.0,
             exit_offset_m: 0.1,
+            entry_t: 0.0,
         };
 
         // Should not panic, should return None due to zero-distance guard
