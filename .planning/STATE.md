@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Digital Twin
 status: in_progress
-stopped_at: Completed 18-02-PLAN.md
-last_updated: "2026-03-10T16:06:11Z"
-last_activity: 2026-03-10 -- Phase 18 Plan 02 complete (road surface polygons, lane markings, junction fills)
+stopped_at: Completed 18-03-PLAN.md
+last_updated: "2026-03-10T16:09:44Z"
+last_activity: 2026-03-10 -- Phase 18 Plan 03 complete (LOD agent rendering, lighting, mesh/billboard shaders)
 progress:
   total_phases: 5
   completed_phases: 2
   total_plans: 12
-  completed_plans: 10
-  percent: 83
+  completed_plans: 11
+  percent: 92
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-03-09)
 ## Current Position
 
 Phase: 18 of 20 (3D Rendering Core) -- IN PROGRESS
-Plan: 2 of 4 in current phase (complete)
-Status: Plan 02 complete, ready for Plan 03
-Last activity: 2026-03-10 -- Phase 18 Plan 02 complete (road surface polygons, lane markings, junction fills)
+Plan: 3 of 4 in current phase (complete)
+Status: Plan 03 complete, ready for Plan 04
+Last activity: 2026-03-10 -- Phase 18 Plan 03 complete (LOD agent rendering, lighting, mesh/billboard shaders)
 
-Progress: [█████░░░░░] 50% (Phase 18)
+Progress: [███████░░░] 75% (Phase 18)
 
 ## Accumulated Context
 
@@ -43,6 +43,10 @@ Recent decisions affecting current work:
 - [18-02]: Alpha blending on road pipeline for semi-transparent lane marking colors
 - [18-02]: Y-offset layering: road=0.0, junction=0.005, marking=0.01 prevents z-fighting
 - [18-02]: Separate render pass for road geometry (Load existing color/depth from ground pass)
+- [18-03]: Separate bind group layouts: camera-only (ground/road) vs camera+lighting (mesh/billboard)
+- [18-03]: CameraUniform3D extended to 112 bytes (view_proj + eye_pos + camera_right + camera_up)
+- [18-03]: Billboard uses 6-vertex quad from vertex_index in shader (no vertex buffer needed)
+- [18-03]: LOD exact boundary classifies to cheaper tier; hysteresis only on downgrade (threshold*1.1)
 - [18-01]: Renderer3D fully independent of existing 2D Renderer (no shared state)
 - [18-01]: Camera bind group layout uses VERTEX|FRAGMENT visibility for future lighting
 - [18-01]: Ground plane at y=-0.01 to prevent z-fighting with road surfaces at y=0
@@ -95,6 +99,6 @@ Recent decisions affecting current work:
 
 ## Session Continuity
 
-Last session: 2026-03-10T16:06:11Z
-Stopped at: Completed 18-02-PLAN.md
-Resume file: .planning/phases/18-3d-rendering-core/18-03-PLAN.md
+Last session: 2026-03-10T16:09:44Z
+Stopped at: Completed 18-03-PLAN.md
+Resume file: .planning/phases/18-3d-rendering-core/18-04-PLAN.md
