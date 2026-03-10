@@ -14,6 +14,8 @@ tokio = { workspace = true }
 thiserror = { workspace = true }
 log = { workspace = true }
 arc-swap = { workspace = true }
+rstar = { workspace = true }
+velos-net = { path = "../velos-net" }
 
 [build-dependencies]
 tonic-build = { workspace = true }
