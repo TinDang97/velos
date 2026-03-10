@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Digital Twin
 status: in-progress
-stopped_at: Completed 17-02-PLAN.md
-last_updated: "2026-03-10T08:23:48Z"
-last_activity: 2026-03-10 -- Phase 17 Plan 02 complete (CameraRegistry, DetectionAggregator, DetectionService)
+stopped_at: Completed 17-03-PLAN.md
+last_updated: "2026-03-10T08:37:08Z"
+last_activity: 2026-03-10 -- Phase 17 Plan 03 complete (CalibrationOverlay, gRPC integration, egui panel)
 progress:
   total_phases: 5
   completed_phases: 1
   total_plans: 4
-  completed_plans: 2
-  percent: 90
+  completed_plans: 3
+  percent: 93
 ---
 
 # Project State
@@ -26,9 +26,9 @@ See: .planning/PROJECT.md (updated 2026-03-09)
 ## Current Position
 
 Phase: 17 of 20 (Detection Ingestion & Demand Calibration)
-Plan: 2 of 4 in current phase (complete)
+Plan: 3 of 4 in current phase (complete)
 Status: In Progress
-Last activity: 2026-03-10 -- Phase 17 Plan 02 complete (CameraRegistry, DetectionAggregator, DetectionService)
+Last activity: 2026-03-10 -- Phase 17 Plan 03 complete (CalibrationOverlay, gRPC integration, egui panel)
 
 Progress: [█████████░] 90% (v1.2)
 
@@ -39,6 +39,11 @@ Progress: [█████████░] 90% (v1.2)
 Decisions are logged in PROJECT.md Key Decisions table.
 Recent decisions affecting current work:
 
+- [17-03]: EMA alpha=0.3 for calibration ratio smoothing; clamp [0.5, 2.0] applied after EMA
+- [17-03]: Simulated count threshold <=5 skips calibration (returns previous ratio)
+- [17-03]: Edge-to-zone mapping uses nearest centroid heuristic (simplified)
+- [17-03]: gRPC server on std::thread with tokio runtime before winit event loop
+- [17-03]: Calibration recomputes every 300 sim-seconds (5 min) matching aggregation window
 - [17-02]: edges_in_fov uses AABB pre-filter + angle normalization to [-PI, PI] for wraparound correctness
 - [17-02]: DetectionAggregator uses i32 keys (prost proto encoding) for vehicle class, not Rust enum
 - [17-02]: DetectionServiceImpl holds Arc<RTree> and Arc<Projection> for local camera registration
@@ -78,6 +83,6 @@ Recent decisions affecting current work:
 
 ## Session Continuity
 
-Last session: 2026-03-10T08:23:48Z
-Stopped at: Completed 17-02-PLAN.md
-Resume file: .planning/phases/17-detection-ingestion-demand-calibration/17-03-PLAN.md
+Last session: 2026-03-10T08:37:08Z
+Stopped at: Completed 17-03-PLAN.md
+Resume file: .planning/phases/17-detection-ingestion-demand-calibration/17-04-PLAN.md
