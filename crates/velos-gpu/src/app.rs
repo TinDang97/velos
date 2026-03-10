@@ -50,6 +50,8 @@ struct GpuState {
     show_cameras: bool,
     /// gRPC server listen address (for display in egui panel).
     grpc_addr: String,
+    /// Cached camera count — only rebuild overlay when cameras change.
+    camera_overlay_count: usize,
 }
 
 impl GpuState {
@@ -220,6 +222,7 @@ impl GpuState {
             show_guide_lines: false,
             show_conflict_debug: false,
             show_cameras: true,
+            camera_overlay_count: 0,
             grpc_addr,
         }
     }
@@ -255,17 +258,25 @@ impl GpuState {
         self.renderer
             .update_instances_typed(&self.queue, &motorbikes, &cars, &pedestrians);
 
-        // Update camera overlay geometry if cameras are registered.
-        if self.show_cameras {
-            let proj = velos_net::EquirectangularProjection::new(10.7756, 106.7019);
-            let cameras_list = {
-                let reg = self.sim.camera_registry.lock().unwrap();
-                reg.list().iter().map(|c| (*c).clone()).collect::<Vec<_>>()
-            };
-            let cam_refs: Vec<&velos_api::Camera> = cameras_list.iter().collect();
-            let vertices =
-                crate::sim_render::build_camera_overlay_vertices(&cam_refs, &proj, true);
-            self.renderer.update_camera_overlay(&self.device, vertices);
+        // Update camera overlay geometry only when camera count changes.
+        // Uses try_lock to avoid blocking the render loop if gRPC holds the lock.
+        if self.show_cameras
+            && let Ok(reg) = self.sim.camera_registry.try_lock()
+        {
+            let current_count = reg.list().len();
+            if current_count != self.camera_overlay_count {
+                self.camera_overlay_count = current_count;
+                let proj = velos_net::EquirectangularProjection::new(10.7756, 106.7019);
+                let cameras_list: Vec<_> =
+                    reg.list().iter().map(|c| (*c).clone()).collect();
+                drop(reg);
+                let cam_refs: Vec<&velos_api::Camera> = cameras_list.iter().collect();
+                let vertices = crate::sim_render::build_camera_overlay_vertices(
+                    &cam_refs, &proj, true,
+                );
+                self.renderer
+                    .update_camera_overlay(&self.device, vertices);
+            }
         }
     }
 
