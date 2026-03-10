@@ -305,13 +305,22 @@ impl GpuState {
                 reg.list().iter().map(|c| (*c).clone()).collect();
             let cam_refs: Vec<&velos_api::Camera> =
                 cameras_list.iter().collect();
+            let proj = velos_net::EquirectangularProjection::new(10.7756, 106.7019);
             let vertices =
                 crate::sim_render::build_speed_overlay_vertices(
                     &cam_refs,
                     &agg,
                     &self.sim.road_graph,
+                    &proj,
                     true,
                 );
+            if !vertices.is_empty() {
+                log::info!(
+                    "Speed overlay: {} cameras, {} vertices",
+                    cameras_list.len(),
+                    vertices.len()
+                );
+            }
             self.renderer
                 .update_speed_overlay(&self.device, vertices);
             self.speed_overlay_dirty = false;

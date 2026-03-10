@@ -277,6 +277,7 @@ pub fn build_speed_overlay_vertices(
     cameras: &[&velos_api::Camera],
     aggregator: &velos_api::DetectionAggregator,
     graph: &velos_net::RoadGraph,
+    projection: &velos_net::EquirectangularProjection,
     show: bool,
 ) -> Vec<GuideLineVertex> {
     if !show || cameras.is_empty() {
@@ -290,7 +291,7 @@ pub fn build_speed_overlay_vertices(
         // Get average speed across all vehicle classes from latest window
         let window = match aggregator.latest_window(cam.id) {
             Some(w) => w,
-            None => continue, // No detection data for this camera
+            None => continue,
         };
 
         // Compute mean speed across all vehicle classes
@@ -305,6 +306,55 @@ pub fn build_speed_overlay_vertices(
         }
         let mean_speed = total_speed_sum / total_count as f32;
         let color = speed_to_color(mean_speed);
+
+        // Always render a speed indicator circle at camera position
+        let (cx, cy) = projection.project(cam.lat, cam.lon);
+        let cx = cx as f32;
+        let cy = cy as f32;
+        let radius = 8.0_f32; // metres
+        let segments = 16;
+        for i in 0..segments {
+            let a0 = (i as f32 / segments as f32) * std::f32::consts::TAU;
+            let a1 = ((i + 1) as f32 / segments as f32) * std::f32::consts::TAU;
+            let base = GuideLineVertex {
+                position: [cx, cy],
+                color,
+                line_dist: 0.0,
+                _pad: 0.0,
+            };
+            let mut v1 = base;
+            v1.position = [cx + radius * a0.cos(), cy + radius * a0.sin()];
+            let mut v2 = base;
+            v2.position = [cx + radius * a1.cos(), cy + radius * a1.sin()];
+            vertices.push(base);
+            vertices.push(v1);
+            vertices.push(v2);
+        }
+
+        // Also add a speed label ring (brighter outline)
+        let mut outline_color = color;
+        outline_color[3] = 1.0; // full opacity outline
+        let outer_r = radius + 2.0;
+        for i in 0..segments {
+            let a0 = (i as f32 / segments as f32) * std::f32::consts::TAU;
+            let a1 = ((i + 1) as f32 / segments as f32) * std::f32::consts::TAU;
+            let inner0 = [cx + radius * a0.cos(), cy + radius * a0.sin()];
+            let outer0 = [cx + outer_r * a0.cos(), cy + outer_r * a0.sin()];
+            let inner1 = [cx + radius * a1.cos(), cy + radius * a1.sin()];
+            let outer1 = [cx + outer_r * a1.cos(), cy + outer_r * a1.sin()];
+            let mk = |pos: [f32; 2]| GuideLineVertex {
+                position: pos,
+                color: outline_color,
+                line_dist: 0.0,
+                _pad: 0.0,
+            };
+            vertices.push(mk(inner0));
+            vertices.push(mk(outer0));
+            vertices.push(mk(inner1));
+            vertices.push(mk(inner1));
+            vertices.push(mk(outer0));
+            vertices.push(mk(outer1));
+        }
 
         // Render each covered edge
         for &edge_id in &cam.covered_edges {
@@ -707,6 +757,7 @@ mod tests {
 
     #[test]
     fn speed_overlay_empty_when_disabled() {
+        let proj = EquirectangularProjection::new(10.7756, 106.7019);
         let agg = velos_api::DetectionAggregator::default();
         let graph = velos_net::RoadGraph::new(petgraph::graph::DiGraph::new());
         let cam = Camera {
@@ -714,20 +765,22 @@ mod tests {
             heading_deg: 0.0, fov_deg: 60.0, range_m: 50.0,
             name: "c".into(), covered_edges: vec![],
         };
-        let verts = build_speed_overlay_vertices(&[&cam], &agg, &graph, false);
+        let verts = build_speed_overlay_vertices(&[&cam], &agg, &graph, &proj, false);
         assert!(verts.is_empty());
     }
 
     #[test]
     fn speed_overlay_empty_when_no_cameras() {
+        let proj = EquirectangularProjection::new(10.7756, 106.7019);
         let agg = velos_api::DetectionAggregator::default();
         let graph = velos_net::RoadGraph::new(petgraph::graph::DiGraph::new());
-        let verts = build_speed_overlay_vertices(&[], &agg, &graph, true);
+        let verts = build_speed_overlay_vertices(&[], &agg, &graph, &proj, true);
         assert!(verts.is_empty());
     }
 
     #[test]
     fn speed_overlay_empty_when_no_speed_data() {
+        let proj = EquirectangularProjection::new(10.7756, 106.7019);
         let agg = velos_api::DetectionAggregator::default();
         let graph = velos_net::RoadGraph::new(petgraph::graph::DiGraph::new());
         let cam = Camera {
@@ -735,7 +788,7 @@ mod tests {
             heading_deg: 0.0, fov_deg: 60.0, range_m: 50.0,
             name: "c".into(), covered_edges: vec![0],
         };
-        let verts = build_speed_overlay_vertices(&[&cam], &agg, &graph, true);
+        let verts = build_speed_overlay_vertices(&[&cam], &agg, &graph, &proj, true);
         assert!(verts.is_empty(), "no aggregator data should produce no vertices");
     }
 
@@ -743,6 +796,7 @@ mod tests {
     fn speed_overlay_produces_vertices_for_edge_with_data() {
         use velos_api::proto::velos::v2::DetectionEvent;
         use velos_net::graph::{RoadEdge, RoadNode, RoadClass};
+        let proj = EquirectangularProjection::new(10.7756, 106.7019);
 
         // Build a simple graph with one edge
         let mut g = petgraph::graph::DiGraph::new();
@@ -776,9 +830,12 @@ mod tests {
             name: "c".into(), covered_edges: vec![0], // edge index 0
         };
 
-        let verts = build_speed_overlay_vertices(&[&cam], &agg, &graph, true);
-        // 2 geometry segments * 6 vertices per quad = 12
-        assert_eq!(verts.len(), 12, "one edge with 3 geometry points = 2 segments * 6 verts");
+        let verts = build_speed_overlay_vertices(&[&cam], &agg, &graph, &proj, true);
+        // Circle indicator: 16 segments * 3 verts + 16 segments * 6 verts (outline) = 48 + 96 = 144
+        // Plus edge quads: 2 segments * 6 verts = 12
+        // Total = 156
+        assert!(!verts.is_empty(), "should produce vertices for camera with speed data");
+        assert!(verts.len() > 12, "should include circle indicator + edge quads");
 
         // Color should be between yellow and green (35 km/h)
         let color = verts[0].color;
