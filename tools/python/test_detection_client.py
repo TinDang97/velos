@@ -65,7 +65,7 @@ def test_register_camera(client: VelosDetectionClient) -> int:
         lon=HCMC_LON,
         heading_deg=90.0,
         fov_deg=60.0,
-        range_m=100.0,
+        range_m=40.0,
         name="hcmc-test-cam",
     )
     print(f"  Registered camera ID: {camera_id}")

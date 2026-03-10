@@ -98,7 +98,7 @@ async fn test_register_camera() {
             lon: 106.7019,
             heading_deg: 90.0,
             fov_deg: 60.0,
-            range_m: 100.0,
+            range_m: 40.0,
             name: "test-cam-1".to_string(),
         })
         .await
@@ -172,7 +172,7 @@ async fn test_stream_detections() {
             lon: 106.7019,
             heading_deg: 90.0,
             fov_deg: 60.0,
-            range_m: 100.0,
+            range_m: 40.0,
             name: "stream-cam".to_string(),
         })
         .await
