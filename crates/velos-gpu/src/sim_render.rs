@@ -96,7 +96,7 @@ pub fn build_camera_overlay_vertices(
         let cy = cy as f32;
 
         // --- Camera icon: diamond (4 triangles forming a square rotated 45deg) ---
-        let icon_size = 12.0_f32; // metres — large enough to see at city-level zoom
+        let icon_size = 3.0_f32;
         let base = GuideLineVertex {
             position: [0.0, 0.0],
             color: icon_color,
@@ -227,6 +227,154 @@ pub fn build_camera_overlay_vertices(
             v[4].position = [p1[0] + n1[0] * hw, p1[1] + n1[1] * hw];
             v[5].position = [p1[0] - n1[0] * hw, p1[1] - n1[1] * hw];
             vertices.extend_from_slice(&v);
+        }
+    }
+
+    vertices
+}
+
+/// Map a speed value (km/h) to an RGBA color using a green-yellow-red gradient.
+///
+/// Thresholds: 0-10 red, 10-25 yellow, 25-40 green, 40+ bright green.
+/// Interpolates between colors for smooth transitions.
+fn speed_to_color(speed_kmh: f32) -> [f32; 4] {
+    const RED: [f32; 4] = [1.0, 0.2, 0.1, 0.7];
+    const YELLOW: [f32; 4] = [1.0, 0.8, 0.0, 0.7];
+    const GREEN: [f32; 4] = [0.2, 0.9, 0.2, 0.7];
+    const BRIGHT_GREEN: [f32; 4] = [0.0, 1.0, 0.4, 0.7];
+
+    fn lerp_color(a: [f32; 4], b: [f32; 4], t: f32) -> [f32; 4] {
+        [
+            a[0] + (b[0] - a[0]) * t,
+            a[1] + (b[1] - a[1]) * t,
+            a[2] + (b[2] - a[2]) * t,
+            a[3] + (b[3] - a[3]) * t,
+        ]
+    }
+
+    if speed_kmh <= 10.0 {
+        RED
+    } else if speed_kmh <= 25.0 {
+        let t = (speed_kmh - 10.0) / 15.0;
+        lerp_color(RED, YELLOW, t)
+    } else if speed_kmh <= 40.0 {
+        let t = (speed_kmh - 25.0) / 15.0;
+        lerp_color(YELLOW, GREEN, t)
+    } else {
+        BRIGHT_GREEN
+    }
+}
+
+/// Half-width of speed overlay quad strip in metres.
+const SPEED_OVERLAY_HALF_WIDTH: f32 = 1.5;
+
+/// Build speed-colored quad strips for edges covered by cameras.
+///
+/// For each camera, gets covered edges and latest mean speed from the aggregator.
+/// Colors edges using green-yellow-red gradient based on speed.
+/// Only renders edges that have actual detection data.
+pub fn build_speed_overlay_vertices(
+    cameras: &[&velos_api::Camera],
+    aggregator: &velos_api::DetectionAggregator,
+    graph: &velos_net::RoadGraph,
+    show: bool,
+) -> Vec<GuideLineVertex> {
+    if !show || cameras.is_empty() {
+        return Vec::new();
+    }
+
+    let g = graph.inner();
+    let mut vertices = Vec::new();
+
+    for cam in cameras {
+        // Get average speed across all vehicle classes from latest window
+        let window = match aggregator.latest_window(cam.id) {
+            Some(w) => w,
+            None => continue, // No detection data for this camera
+        };
+
+        // Compute mean speed across all vehicle classes
+        let mut total_speed_sum = 0.0_f32;
+        let mut total_count = 0_u32;
+        for &(sum, count) in window.speed_samples.values() {
+            total_speed_sum += sum;
+            total_count += count;
+        }
+        if total_count == 0 {
+            continue; // No speed data
+        }
+        let mean_speed = total_speed_sum / total_count as f32;
+        let color = speed_to_color(mean_speed);
+
+        // Render each covered edge
+        for &edge_id in &cam.covered_edges {
+            let edge_idx = petgraph::graph::EdgeIndex::new(edge_id as usize);
+            let edge = match g.edge_weight(edge_idx) {
+                Some(e) => e,
+                None => continue,
+            };
+
+            let geom = &edge.geometry;
+            if geom.len() < 2 {
+                continue;
+            }
+
+            // Build quad strip along edge geometry
+            let hw = SPEED_OVERLAY_HALF_WIDTH;
+            let mut cumulative_dist = 0.0_f32;
+
+            for w in geom.windows(2) {
+                let p0 = [w[0][0] as f32, w[0][1] as f32];
+                let p1 = [w[1][0] as f32, w[1][1] as f32];
+
+                let dx = p1[0] - p0[0];
+                let dy = p1[1] - p0[1];
+                let seg_len = (dx * dx + dy * dy).sqrt();
+                if seg_len < 1e-6 {
+                    continue;
+                }
+
+                // Normal perpendicular to segment
+                let nx = -dy / seg_len;
+                let ny = dx / seg_len;
+
+                let dist0 = cumulative_dist;
+                cumulative_dist += seg_len;
+                let dist1 = cumulative_dist;
+
+                // Two triangles forming a quad
+                let v00 = GuideLineVertex {
+                    position: [p0[0] + nx * hw, p0[1] + ny * hw],
+                    color,
+                    line_dist: dist0,
+                    _pad: 0.0,
+                };
+                let v01 = GuideLineVertex {
+                    position: [p0[0] - nx * hw, p0[1] - ny * hw],
+                    color,
+                    line_dist: dist0,
+                    _pad: 0.0,
+                };
+                let v10 = GuideLineVertex {
+                    position: [p1[0] + nx * hw, p1[1] + ny * hw],
+                    color,
+                    line_dist: dist1,
+                    _pad: 0.0,
+                };
+                let v11 = GuideLineVertex {
+                    position: [p1[0] - nx * hw, p1[1] - ny * hw],
+                    color,
+                    line_dist: dist1,
+                    _pad: 0.0,
+                };
+
+                vertices.push(v00);
+                vertices.push(v01);
+                vertices.push(v10);
+                vertices.push(v01);
+                vertices.push(v11);
+                vertices.push(v10);
+            }
         }
     }
 
@@ -526,5 +674,114 @@ mod tests {
         let v1 = build_camera_overlay_vertices(&[&cam1], &proj, true);
         let v2 = build_camera_overlay_vertices(&[&cam1, &cam2], &proj, true);
         assert_eq!(v2.len(), v1.len() * 2, "two cameras should produce 2x vertices");
+    }
+
+    // --- Speed overlay tests ---
+
+    #[test]
+    fn speed_to_color_red_at_zero() {
+        let c = speed_to_color(0.0);
+        assert_eq!(c, [1.0, 0.2, 0.1, 0.7]);
+    }
+
+    #[test]
+    fn speed_to_color_red_at_10() {
+        let c = speed_to_color(10.0);
+        assert_eq!(c, [1.0, 0.2, 0.1, 0.7]);
+    }
+
+    #[test]
+    fn speed_to_color_bright_green_above_40() {
+        let c = speed_to_color(50.0);
+        assert_eq!(c, [0.0, 1.0, 0.4, 0.7]);
+    }
+
+    #[test]
+    fn speed_to_color_interpolates_between_red_and_yellow() {
+        // Midpoint between red and yellow at 17.5 km/h
+        let c = speed_to_color(17.5);
+        // t = (17.5 - 10) / 15 = 0.5
+        assert!((c[0] - 1.0).abs() < 0.01); // r stays 1.0
+        assert!((c[1] - 0.5).abs() < 0.01); // g lerps 0.2 -> 0.8 at t=0.5
+    }
+
+    #[test]
+    fn speed_overlay_empty_when_disabled() {
+        let agg = velos_api::DetectionAggregator::default();
+        let graph = velos_net::RoadGraph::new(petgraph::graph::DiGraph::new());
+        let cam = Camera {
+            id: 1, lat: 10.775, lon: 106.700,
+            heading_deg: 0.0, fov_deg: 60.0, range_m: 50.0,
+            name: "c".into(), covered_edges: vec![],
+        };
+        let verts = build_speed_overlay_vertices(&[&cam], &agg, &graph, false);
+        assert!(verts.is_empty());
+    }
+
+    #[test]
+    fn speed_overlay_empty_when_no_cameras() {
+        let agg = velos_api::DetectionAggregator::default();
+        let graph = velos_net::RoadGraph::new(petgraph::graph::DiGraph::new());
+        let verts = build_speed_overlay_vertices(&[], &agg, &graph, true);
+        assert!(verts.is_empty());
+    }
+
+    #[test]
+    fn speed_overlay_empty_when_no_speed_data() {
+        let agg = velos_api::DetectionAggregator::default();
+        let graph = velos_net::RoadGraph::new(petgraph::graph::DiGraph::new());
+        let cam = Camera {
+            id: 1, lat: 10.775, lon: 106.700,
+            heading_deg: 0.0, fov_deg: 60.0, range_m: 50.0,
+            name: "c".into(), covered_edges: vec![0],
+        };
+        let verts = build_speed_overlay_vertices(&[&cam], &agg, &graph, true);
+        assert!(verts.is_empty(), "no aggregator data should produce no vertices");
+    }
+
+    #[test]
+    fn speed_overlay_produces_vertices_for_edge_with_data() {
+        use velos_api::proto::velos::v2::DetectionEvent;
+        use velos_net::graph::{RoadEdge, RoadNode, RoadClass};
+
+        // Build a simple graph with one edge
+        let mut g = petgraph::graph::DiGraph::new();
+        let n0 = g.add_node(RoadNode { pos: [0.0, 0.0] });
+        let n1 = g.add_node(RoadNode { pos: [100.0, 0.0] });
+        g.add_edge(n0, n1, RoadEdge {
+            length_m: 100.0,
+            speed_limit_mps: 13.89,
+            lane_count: 2,
+            oneway: true,
+            road_class: RoadClass::Primary,
+            geometry: vec![[0.0, 0.0], [50.0, 0.0], [100.0, 0.0]],
+            motorbike_only: false,
+            time_windows: None,
+        });
+        let graph = velos_net::RoadGraph::new(g);
+
+        // Create aggregator with speed data
+        let mut agg = velos_api::DetectionAggregator::new(300_000, 3_600_000);
+        agg.ingest(1, &DetectionEvent {
+            camera_id: 1,
+            timestamp_ms: 100_000,
+            vehicle_class: 1,
+            count: 5,
+            speed_kmh: Some(35.0),
+        });
+
+        let cam = Camera {
+            id: 1, lat: 10.775, lon: 106.700,
+            heading_deg: 0.0, fov_deg: 60.0, range_m: 50.0,
+            name: "c".into(), covered_edges: vec![0], // edge index 0
+        };
+
+        let verts = build_speed_overlay_vertices(&[&cam], &agg, &graph, true);
+        // 2 geometry segments * 6 vertices per quad = 12
+        assert_eq!(verts.len(), 12, "one edge with 3 geometry points = 2 segments * 6 verts");
+
+        // Color should be between yellow and green (35 km/h)
+        let color = verts[0].color;
+        assert!(color[1] > 0.5, "green channel should be significant at 35 km/h");
     }
 }

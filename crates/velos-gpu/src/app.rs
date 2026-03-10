@@ -48,6 +48,12 @@ struct GpuState {
     show_conflict_debug: bool,
     /// Show camera FOV cone overlays on the map.
     show_cameras: bool,
+    /// Show speed heatmap overlay on camera-covered edges.
+    show_speed_overlay: bool,
+    /// Dirty flag: rebuild speed overlay vertices on next frame.
+    speed_overlay_dirty: bool,
+    /// Frame counter for periodic speed overlay refresh.
+    speed_overlay_frame_counter: u32,
     /// gRPC server listen address (for display in egui panel).
     grpc_addr: String,
     /// Cached camera count — only rebuild overlay when cameras change.
@@ -222,6 +228,9 @@ impl GpuState {
             show_guide_lines: false,
             show_conflict_debug: false,
             show_cameras: true,
+            show_speed_overlay: false,
+            speed_overlay_dirty: true,
+            speed_overlay_frame_counter: 0,
             camera_overlay_count: 0,
             grpc_addr,
         }
@@ -278,6 +287,35 @@ impl GpuState {
                     .update_camera_overlay(&self.device, vertices);
             }
         }
+
+        // Periodic speed overlay refresh (~every 60 frames / ~1 second).
+        self.speed_overlay_frame_counter += 1;
+        if self.speed_overlay_frame_counter >= 60 {
+            self.speed_overlay_frame_counter = 0;
+            self.speed_overlay_dirty = true;
+        }
+
+        // Update speed overlay when dirty and visible.
+        if self.show_speed_overlay
+            && self.speed_overlay_dirty
+            && let Ok(reg) = self.sim.camera_registry.try_lock()
+            && let Ok(agg) = self.sim.aggregator.try_lock()
+        {
+            let cameras_list: Vec<_> =
+                reg.list().iter().map(|c| (*c).clone()).collect();
+            let cam_refs: Vec<&velos_api::Camera> =
+                cameras_list.iter().collect();
+            let vertices =
+                crate::sim_render::build_speed_overlay_vertices(
+                    &cam_refs,
+                    &agg,
+                    &self.sim.road_graph,
+                    true,
+                );
+            self.renderer
+                .update_speed_overlay(&self.device, vertices);
+            self.speed_overlay_dirty = false;
+        }
     }
 
     fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
@@ -295,6 +333,7 @@ impl GpuState {
                 self.show_guide_lines,
                 self.show_conflict_debug,
                 self.show_cameras,
+                self.show_speed_overlay,
             );
             self.queue.submit(std::iter::once(encoder.finish()));
         }
@@ -305,6 +344,7 @@ impl GpuState {
         let show_gl = &mut self.show_guide_lines;
         let show_cd = &mut self.show_conflict_debug;
         let show_cam = &mut self.show_cameras;
+        let show_speed = &mut self.show_speed_overlay;
         let grpc_addr_ref = &self.grpc_addr;
         let full_output = self.egui_ctx.run(raw_input, |ctx| {
             egui::SidePanel::left("controls")
@@ -402,6 +442,7 @@ impl GpuState {
                     ui.checkbox(show_gl, "Show Guide Lines");
                     ui.checkbox(show_cd, "Show Conflict Debug");
                     ui.checkbox(show_cam, "Show Cameras");
+                    ui.checkbox(show_speed, "Show Speed Overlay");
 
                     ui.separator();
                     ui.checkbox(&mut sim.show_calibration_panel, "Calibration Panel");

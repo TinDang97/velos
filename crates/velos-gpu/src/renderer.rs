@@ -181,6 +181,10 @@ pub struct Renderer {
     camera_overlay_buffer: Option<wgpu::Buffer>,
     /// Number of vertices in the camera overlay buffer.
     camera_overlay_vertex_count: u32,
+    /// GPU vertex buffer for speed heatmap overlay on camera-covered edges.
+    speed_overlay_buffer: Option<wgpu::Buffer>,
+    /// Number of vertices in the speed overlay buffer.
+    speed_overlay_vertex_count: u32,
 }
 
 impl Renderer {
@@ -432,6 +436,8 @@ impl Renderer {
             debug_overlay_vertex_count: 0,
             camera_overlay_buffer: None,
             camera_overlay_vertex_count: 0,
+            speed_overlay_buffer: None,
+            speed_overlay_vertex_count: 0,
         }
     }
 
@@ -569,6 +575,7 @@ impl Renderer {
         show_guide_lines: bool,
         show_conflict_debug: bool,
         show_cameras: bool,
+        show_speed_overlay: bool,
     ) {
         // Render map tiles first (clears the screen).
         // If map tiles exist, agents render on top with LoadOp::Load.
@@ -683,6 +690,18 @@ impl Renderer {
             pass.set_bind_group(0, &self.camera_bind_group, &[]);
             pass.set_vertex_buffer(0, buf.slice(..));
             pass.draw(0..self.camera_overlay_vertex_count, 0..1);
+        }
+
+        // Draw speed heatmap overlay on camera-covered edges.
+        // Reuses guide_line_pipeline (same vertex format, solid color).
+        if show_speed_overlay
+            && let Some(ref buf) = self.speed_overlay_buffer
+            && self.speed_overlay_vertex_count > 0
+        {
+            pass.set_pipeline(&self.guide_line_pipeline);
+            pass.set_bind_group(0, &self.camera_bind_group, &[]);
+            pass.set_vertex_buffer(0, buf.slice(..));
+            pass.draw(0..self.speed_overlay_vertex_count, 0..1);
         }
     }
 
@@ -928,6 +947,33 @@ impl Renderer {
         }
         log::info!(
             "Uploaded {} camera overlay vertices",
+            vertices.len(),
+        );
+    }
+
+    /// Upload speed heatmap overlay geometry for camera-covered edges.
+    ///
+    /// Accepts pre-built `GuideLineVertex` data from `build_speed_overlay_vertices`.
+    /// Replaces any previous speed overlay buffer.
+    pub fn update_speed_overlay(
+        &mut self,
+        device: &wgpu::Device,
+        vertices: Vec<GuideLineVertex>,
+    ) {
+        self.speed_overlay_vertex_count = vertices.len() as u32;
+        if !vertices.is_empty() {
+            self.speed_overlay_buffer = Some(device.create_buffer_init(
+                &wgpu::util::BufferInitDescriptor {
+                    label: Some("speed_overlay_vertices"),
+                    contents: bytemuck::cast_slice(&vertices),
+                    usage: wgpu::BufferUsages::VERTEX,
+                },
+            ));
+        } else {
+            self.speed_overlay_buffer = None;
+        }
+        log::info!(
+            "Uploaded {} speed overlay vertices",
             vertices.len(),
         );
     }

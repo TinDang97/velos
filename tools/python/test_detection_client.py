@@ -150,6 +150,71 @@ def test_stream_detections(
         print(f"  {name}: {count} detections{speed_str}")
 
 
+def live_feed(client: VelosDetectionClient, camera_id: int) -> None:
+    """Continuously send realistic detection events to simulate live camera feed."""
+    import random
+
+    print("\n--- Live Feed Mode ---")
+    print("Sending detection events every 2 seconds (Ctrl+C to stop)")
+
+    batch_id = 0
+    total_vehicles = 0
+    total_batches = 0
+
+    while True:
+        batch_id += 1
+        now_ms = int(time.time() * 1000)
+
+        # Realistic HCMC traffic mix: ~80% motorbikes, ~15% cars, ~5% buses
+        events = []
+
+        # Motorbikes (dominant in HCMC)
+        mb_count = random.randint(8, 25)
+        mb_speed = random.uniform(25.0, 45.0)
+        events.append(make_detection_event(
+            camera_id, MOTORBIKE, mb_count,
+            speed_kmh=mb_speed, timestamp_ms=now_ms,
+        ))
+
+        # Cars
+        car_count = random.randint(1, 5)
+        car_speed = random.uniform(20.0, 40.0)
+        events.append(make_detection_event(
+            camera_id, CAR, car_count,
+            speed_kmh=car_speed, timestamp_ms=now_ms,
+        ))
+
+        # Buses (occasional)
+        if random.random() < 0.3:
+            events.append(make_detection_event(
+                camera_id, BUS, 1,
+                speed_kmh=random.uniform(15.0, 30.0), timestamp_ms=now_ms,
+            ))
+
+        # Bicycles (rare)
+        if random.random() < 0.15:
+            events.append(make_detection_event(
+                camera_id, BICYCLE, random.randint(1, 3),
+                speed_kmh=random.uniform(10.0, 20.0), timestamp_ms=now_ms,
+            ))
+
+        batch = detection_pb2.DetectionBatch(batch_id=batch_id, events=events)
+        acks = list(client.stream_detections([batch]))
+
+        total = sum(e.count for e in events)
+        total_vehicles += total
+        total_batches += 1
+        speed_events = [e for e in events if e.HasField("speed_kmh")]
+        speed_total = sum(e.speed_kmh * e.count for e in speed_events)
+        avg_speed = speed_total / total if total > 0 else 0.0
+        status = "OK" if acks and acks[0].status == 0 else "ERR"
+        print(f"  [{status}] Batch {batch_id}: {total} vehicles, avg speed {avg_speed:.1f} km/h")
+
+        time.sleep(2)
+
+    return total_batches, total_vehicles  # unreachable but satisfies type hints
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Test VELOS DetectionService gRPC client"
@@ -158,6 +223,11 @@ def main() -> None:
         "--addr",
         default="localhost:50051",
         help="gRPC server address (default: localhost:50051)",
+    )
+    parser.add_argument(
+        "--live",
+        action="store_true",
+        help="After tests, enter live feed mode (Ctrl+C to stop)",
     )
     args = parser.parse_args()
 
@@ -169,7 +239,13 @@ def main() -> None:
             test_list_cameras(client)
             test_stream_detections(client, camera_id)
 
-        print("\n=== All tests PASSED ===")
+            print("\n=== All tests PASSED ===")
+
+            if args.live:
+                try:
+                    live_feed(client, camera_id)
+                except KeyboardInterrupt:
+                    print("\n\n--- Live feed stopped by user ---")
     except Exception as e:
         print(f"\n=== FAILED: {e} ===")
         sys.exit(1)
