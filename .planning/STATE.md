@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Digital Twin
 status: in-progress
-stopped_at: Completed 17-03-PLAN.md
-last_updated: "2026-03-10T08:37:08Z"
-last_activity: 2026-03-10 -- Phase 17 Plan 03 complete (CalibrationOverlay, gRPC integration, egui panel)
+stopped_at: Completed 17-04-PLAN.md (Phase 17 complete)
+last_updated: "2026-03-10T09:05:00Z"
+last_activity: 2026-03-10 -- Phase 17 complete (Camera FOV overlay, client SDKs, visual verification)
 progress:
   total_phases: 5
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 4
-  completed_plans: 3
-  percent: 93
+  completed_plans: 4
+  percent: 100
 ---
 
 # Project State
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-09)
 
 **Core value:** Motorbikes move realistically through traffic using continuous sublane positioning -- not forced into discrete lanes like Western traffic models
-**Current focus:** Phase 17 -- Detection Ingestion & Demand Calibration
+**Current focus:** Phase 17 complete -- ready for Phase 18 (3D Rendering Core) or Phase 20 (Real-Time Calibration)
 
 ## Current Position
 
-Phase: 17 of 20 (Detection Ingestion & Demand Calibration)
-Plan: 3 of 4 in current phase (complete)
-Status: In Progress
-Last activity: 2026-03-10 -- Phase 17 Plan 03 complete (CalibrationOverlay, gRPC integration, egui panel)
+Phase: 17 of 20 (Detection Ingestion & Demand Calibration) -- COMPLETE
+Plan: 4 of 4 in current phase (complete)
+Status: Phase 17 Complete
+Last activity: 2026-03-10 -- Phase 17 Plan 04 complete (Camera FOV overlay, client SDKs, visual verification)
 
-Progress: [█████████░] 90% (v1.2)
+Progress: [██████████] 100% (Phase 17)
 
 ## Accumulated Context
 
@@ -39,6 +39,10 @@ Progress: [█████████░] 90% (v1.2)
 Decisions are logged in PROJECT.md Key Decisions table.
 Recent decisions affecting current work:
 
+- [17-04]: Camera FOV rendered as semi-transparent triangle cone (alpha 0.15 fill, 0.6 outline)
+- [17-04]: RegisterCamera switched to fire-and-forget (no oneshot reply) for simplicity
+- [17-04]: Camera range 40m (reduced from 100m) for realistic urban CCTV
+- [17-04]: Speed heatmap overlay with live Python feed for detection visualization
 - [17-03]: EMA alpha=0.3 for calibration ratio smoothing; clamp [0.5, 2.0] applied after EMA
 - [17-03]: Simulated count threshold <=5 skips calibration (returns previous ratio)
 - [17-03]: Edge-to-zone mapping uses nearest centroid heuristic (simplified)
@@ -83,6 +87,6 @@ Recent decisions affecting current work:
 
 ## Session Continuity
 
-Last session: 2026-03-10T08:37:08Z
-Stopped at: Completed 17-03-PLAN.md
-Resume file: .planning/phases/17-detection-ingestion-demand-calibration/17-04-PLAN.md
+Last session: 2026-03-10T09:05:00Z
+Stopped at: Completed 17-04-PLAN.md (Phase 17 complete)
+Resume file: Next phase to plan (Phase 18 or Phase 20)
