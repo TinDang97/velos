@@ -219,7 +219,7 @@ impl GpuState {
             last_frame_time: std::time::Instant::now(),
             show_guide_lines: false,
             show_conflict_debug: false,
-            show_cameras: false,
+            show_cameras: true,
             grpc_addr,
         }
     }

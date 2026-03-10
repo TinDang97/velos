@@ -82,21 +82,21 @@ pub fn build_camera_overlay_vertices(
     let mut vertices = Vec::new();
 
     // Camera icon color: bright yellow, opaque.
-    let icon_color = [1.0_f32, 0.9, 0.0, 0.9];
-    // FOV cone fill: semi-transparent cyan.
-    let cone_fill_color = [0.0_f32, 0.8, 1.0, 0.15];
-    // FOV cone outline: brighter cyan.
-    let cone_outline_color = [0.0_f32, 0.8, 1.0, 0.6];
+    let icon_color = [1.0_f32, 0.9, 0.0, 1.0];
+    // FOV cone fill: semi-transparent cyan (visible but not overwhelming).
+    let cone_fill_color = [0.0_f32, 0.8, 1.0, 0.30];
+    // FOV cone outline: bright cyan.
+    let cone_outline_color = [0.0_f32, 0.9, 1.0, 0.8];
     // Outline width in metres.
-    let outline_width = 1.5_f32;
+    let outline_width = 2.0_f32;
 
     for cam in cameras {
         let (cx, cy) = projection.project(cam.lat, cam.lon);
         let cx = cx as f32;
         let cy = cy as f32;
 
-        // --- Camera icon: small diamond (4 triangles forming a square rotated 45deg) ---
-        let icon_size = 4.0_f32; // metres
+        // --- Camera icon: diamond (4 triangles forming a square rotated 45deg) ---
+        let icon_size = 12.0_f32; // metres — large enough to see at city-level zoom
         let base = GuideLineVertex {
             position: [0.0, 0.0],
             color: icon_color,
