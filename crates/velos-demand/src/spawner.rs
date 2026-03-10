@@ -11,6 +11,8 @@ use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 use velos_core::cost::AgentProfile;
 
+use std::collections::HashMap;
+
 use crate::od_matrix::{OdMatrix, Zone};
 use crate::profile::{assign_profile, ProfileDistribution};
 use crate::tod_profile::TodProfile;
@@ -138,6 +140,61 @@ impl Spawner {
 
         spawns
     }
+
+    /// Generate spawn requests with calibration scaling factors applied.
+    ///
+    /// Same logic as [`generate_spawns`] but multiplies each OD pair's trip
+    /// count by the corresponding calibration factor. If no factor exists for
+    /// an OD pair, 1.0 (no adjustment) is used.
+    pub fn generate_spawns_calibrated(
+        &mut self,
+        sim_hour: f64,
+        dt: f64,
+        calibration_factors: &HashMap<(Zone, Zone), f32>,
+    ) -> Vec<SpawnRequest> {
+        let factor = self.tod.factor_at(sim_hour);
+        let time_fraction = dt / 3600.0;
+
+        let pairs: Vec<(Zone, Zone, u32)> = self.od.zone_pairs().collect();
+        let mut spawns = Vec::new();
+
+        for (from, to, trips) in pairs {
+            let cal_factor = calibration_factors
+                .get(&(from, to))
+                .copied()
+                .unwrap_or(1.0) as f64;
+            let expected = trips as f64 * factor * cal_factor * time_fraction;
+
+            let whole = expected.floor() as u32;
+            let frac = expected - expected.floor();
+
+            let mut count = whole;
+            if frac > 0.0 && self.rng.gen_range(0.0..1.0) < frac {
+                count += 1;
+            }
+
+            for _ in 0..count {
+                let vtype = match self.vehicle_dist.sample(&mut self.rng) {
+                    0 => SpawnVehicleType::Motorbike,
+                    1 => SpawnVehicleType::Car,
+                    2 => SpawnVehicleType::Bus,
+                    3 => SpawnVehicleType::Bicycle,
+                    4 => SpawnVehicleType::Truck,
+                    5 => SpawnVehicleType::Emergency,
+                    _ => SpawnVehicleType::Pedestrian,
+                };
+                let profile = assign_profile(vtype, &self.profile_dist, &mut self.rng);
+                spawns.push(SpawnRequest {
+                    origin: from,
+                    destination: to,
+                    vehicle_type: vtype,
+                    profile,
+                });
+            }
+        }
+
+        spawns
+    }
 }
 
 #[cfg(test)]
@@ -190,6 +247,39 @@ mod tests {
         assert!(seen.contains(&SpawnVehicleType::Truck), "missing Truck");
         assert!(seen.contains(&SpawnVehicleType::Emergency), "missing Emergency");
         assert!(seen.contains(&SpawnVehicleType::Pedestrian), "missing Pedestrian");
+    }
+
+    #[test]
+    fn spawner_calibrated_doubles_spawns_for_scaled_pair() {
+        use std::collections::HashMap;
+
+        let mut od = OdMatrix::new();
+        od.set_trips(Zone::BenThanh, Zone::NguyenHue, 36_000);
+        let tod = TodProfile::new(vec![(0.0, 1.0), (24.0, 1.0)]);
+
+        // Run uncalibrated
+        let mut total_uncal = 0usize;
+        for seed in 0..100 {
+            let mut s = Spawner::new(od.clone(), tod.clone(), seed);
+            total_uncal += s.generate_spawns(12.0, 1.0).len();
+        }
+
+        // Run with 2.0 factor
+        let mut factors = HashMap::new();
+        factors.insert((Zone::BenThanh, Zone::NguyenHue), 2.0f32);
+
+        let mut total_cal = 0usize;
+        for seed in 0..100 {
+            let mut s = Spawner::new(od.clone(), tod.clone(), seed);
+            total_cal += s.generate_spawns_calibrated(12.0, 1.0, &factors).len();
+        }
+
+        // Calibrated should be roughly 2x uncalibrated (within tolerance)
+        let ratio = total_cal as f64 / total_uncal as f64;
+        assert!(
+            (1.8..=2.2).contains(&ratio),
+            "expected ratio ~2.0, got {ratio:.2} (uncal={total_uncal}, cal={total_cal})"
+        );
     }
 
     #[test]

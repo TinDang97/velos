@@ -28,6 +28,7 @@ mod sim_pedestrians;
 mod sim_perception;
 mod sim_signals;
 mod sim_vehicles;
+mod sim_calibration;
 mod sim_reroute;
 pub mod sim_snapshot;
 

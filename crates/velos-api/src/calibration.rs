@@ -166,7 +166,7 @@ pub fn compute_calibration_factors(
 
         let state = camera_states
             .entry(cam_id)
-            .or_insert_with(CameraCalibrationState::default);
+            .or_default();
 
         let ratio = compute_camera_ratio(total_observed, total_simulated, state);
 

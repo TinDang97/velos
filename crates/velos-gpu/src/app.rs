@@ -14,6 +14,8 @@ use winit::{
     window::{Window, WindowAttributes, WindowId},
 };
 
+use velos_api::bridge::ApiBridge;
+
 use crate::{
     camera::Camera2D,
     compute::ComputeDispatcher,
@@ -44,6 +46,10 @@ struct GpuState {
     show_guide_lines: bool,
     /// Show conflict crossing points and active conflict pair debug overlay.
     show_conflict_debug: bool,
+    /// Show camera FOV cone overlays on the map.
+    show_cameras: bool,
+    /// gRPC server listen address (for display in egui panel).
+    grpc_addr: String,
 }
 
 impl GpuState {
@@ -116,7 +122,49 @@ impl GpuState {
         };
 
         let mut compute_dispatcher = ComputeDispatcher::new(&device);
-        let sim = SimWorld::new(road_graph, &device, &queue, &mut compute_dispatcher);
+        let mut sim = SimWorld::new(road_graph, &device, &queue, &mut compute_dispatcher);
+
+        // --- Start gRPC detection server on background thread ---
+        let grpc_addr = std::env::var("VELOS_GRPC_ADDR")
+            .unwrap_or_else(|_| "[::1]:50051".to_string());
+
+        let (bridge, cmd_tx) = ApiBridge::new(256);
+        let aggregator = Arc::clone(&sim.aggregator);
+        let registry = Arc::clone(&sim.camera_registry);
+        sim.api_bridge = Some(bridge);
+
+        // Build edge R-tree and projection for camera FOV queries
+        let edge_tree = Arc::new(velos_net::snap::build_edge_rtree(&sim.road_graph));
+        let projection = Arc::new(
+            velos_net::EquirectangularProjection::new(10.7756, 106.7019),
+        );
+
+        let detection_service = velos_api::create_detection_service(
+            cmd_tx,
+            aggregator,
+            registry,
+            edge_tree,
+            projection,
+        );
+
+        let grpc_addr_clone = grpc_addr.clone();
+        std::thread::spawn(move || {
+            let rt = tokio::runtime::Runtime::new()
+                .expect("failed to create tokio runtime for gRPC server");
+            rt.block_on(async {
+                let addr = grpc_addr_clone.parse()
+                    .expect("invalid gRPC listen address");
+                log::info!("gRPC server listening on {}", addr);
+                if let Err(e) = tonic::transport::Server::builder()
+                    .add_service(detection_service)
+                    .serve(addr)
+                    .await
+                {
+                    log::error!("gRPC server error: {e:?}");
+                }
+            });
+        });
+
         let road_lines = sim.road_edge_lines();
         let (cx, cy) = sim.network_center();
 
@@ -171,6 +219,8 @@ impl GpuState {
             last_frame_time: std::time::Instant::now(),
             show_guide_lines: false,
             show_conflict_debug: false,
+            show_cameras: false,
+            grpc_addr,
         }
     }
 
@@ -220,6 +270,7 @@ impl GpuState {
                 &view,
                 self.show_guide_lines,
                 self.show_conflict_debug,
+                self.show_cameras,
             );
             self.queue.submit(std::iter::once(encoder.finish()));
         }
@@ -229,6 +280,8 @@ impl GpuState {
         let sim = &mut self.sim;
         let show_gl = &mut self.show_guide_lines;
         let show_cd = &mut self.show_conflict_debug;
+        let show_cam = &mut self.show_cameras;
+        let grpc_addr_ref = &self.grpc_addr;
         let full_output = self.egui_ctx.run(raw_input, |ctx| {
             egui::SidePanel::left("controls")
                 .exact_width(240.0)
@@ -324,6 +377,46 @@ impl GpuState {
                     ui.heading("Debug Overlays");
                     ui.checkbox(show_gl, "Show Guide Lines");
                     ui.checkbox(show_cd, "Show Conflict Debug");
+                    ui.checkbox(show_cam, "Show Cameras");
+
+                    ui.separator();
+                    ui.checkbox(&mut sim.show_calibration_panel, "Calibration Panel");
+
+                    if sim.show_calibration_panel {
+                        ui.separator();
+                        ui.heading("Calibration");
+                        ui.label(format!("gRPC: {}", grpc_addr_ref));
+
+                        let reg = sim.camera_registry.lock().unwrap();
+                        let cameras = reg.list();
+                        ui.label(format!("Cameras: {}", cameras.len()));
+
+                        if !cameras.is_empty() {
+                            egui::Grid::new("calibration_grid")
+                                .striped(true)
+                                .show(ui, |ui| {
+                                    ui.label("Camera");
+                                    ui.label("Obs");
+                                    ui.label("Sim");
+                                    ui.label("Ratio");
+                                    ui.end_row();
+
+                                    for cam in &cameras {
+                                        let state = sim.calibration_states
+                                            .get(&cam.id);
+                                        let obs = state.map(|s| s.last_observed).unwrap_or(0);
+                                        let sim_count = state.map(|s| s.last_simulated).unwrap_or(0);
+                                        let ratio = state.map(|s| s.previous_ratio).unwrap_or(1.0);
+
+                                        ui.label(&cam.name);
+                                        ui.label(format!("{obs}"));
+                                        ui.label(format!("{sim_count}"));
+                                        ui.label(format!("{ratio:.2}"));
+                                        ui.end_row();
+                                    }
+                                });
+                        }
+                    }
                 });
         });
 

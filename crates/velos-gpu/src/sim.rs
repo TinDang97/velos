@@ -9,12 +9,17 @@
 //! CPU car-following is kept in `cpu_reference` module for test validation only.
 
 use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 
 use hecs::World;
 use petgraph::graph::{EdgeIndex, NodeIndex};
 use rand::rngs::StdRng;
 use rand::SeedableRng;
 
+use velos_api::bridge::ApiBridge;
+use velos_api::calibration::{CalibrationStore, CameraCalibrationState};
+use velos_api::camera::CameraRegistry;
+use velos_api::aggregator::DetectionAggregator;
 use velos_demand::{OdMatrix, Spawner, TodProfile, Zone};
 use velos_net::junction::JunctionData;
 use velos_net::{RoadGraph, SpatialIndex};
@@ -29,6 +34,7 @@ use velos_vehicle::social_force::SocialForceParams;
 use velos_vehicle::sublane::SublaneParams;
 
 use crate::ped_adaptive::PedestrianAdaptivePipeline;
+use crate::sim_calibration::build_edge_to_zone;
 use crate::sim_meso::MesoAgentState;
 
 use crate::compute::ComputeDispatcher;
@@ -189,6 +195,27 @@ pub struct SimWorld {
     /// Precomputed junction geometry for Bezier turn paths and conflict points.
     /// Keyed by junction node index (u32). Built from `precompute_all_junctions()`.
     pub junction_data: HashMap<u32, JunctionData>,
+
+    // --- Detection & Calibration fields (Phase 17) ---
+
+    /// API bridge for receiving gRPC commands (None when gRPC not active).
+    pub(crate) api_bridge: Option<ApiBridge>,
+    /// Camera registry shared with gRPC service.
+    pub camera_registry: Arc<Mutex<CameraRegistry>>,
+    /// Detection aggregator shared with gRPC service.
+    pub aggregator: Arc<Mutex<DetectionAggregator>>,
+    /// Calibration overlay store (ArcSwap, lock-free reads).
+    pub calibration_store: CalibrationStore,
+    /// Per-camera EMA state for calibration ratio tracking.
+    pub(crate) calibration_states: HashMap<u32, CameraCalibrationState>,
+    /// Per-camera simulated agent counts (accumulated each calibration window).
+    pub(crate) simulated_counts: HashMap<u32, u32>,
+    /// Last sim time when calibration was computed.
+    pub(crate) last_calibration_time: f64,
+    /// Mapping from edge ID to zone (for calibration factor mapping).
+    pub(crate) edge_to_zone: HashMap<u32, Zone>,
+    /// Whether to show calibration panel in egui.
+    pub show_calibration_panel: bool,
 }
 
 impl SimWorld {
@@ -266,6 +293,8 @@ impl SimWorld {
             junction_data.len(),
         );
 
+        let edge_to_zone = build_edge_to_zone(&road_graph, &zone_centroids);
+
         let mut sim = Self {
             world: World::new(),
             road_graph,
@@ -300,6 +329,15 @@ impl SimWorld {
             next_bus_route_index: 0,
             gtfs_route_indices: HashMap::new(),
             junction_data,
+            api_bridge: None,
+            camera_registry: Arc::new(Mutex::new(CameraRegistry::new())),
+            aggregator: Arc::new(Mutex::new(DetectionAggregator::default())),
+            calibration_store: CalibrationStore::new(),
+            calibration_states: HashMap::new(),
+            simulated_counts: HashMap::new(),
+            last_calibration_time: 0.0,
+            edge_to_zone,
+            show_calibration_panel: false,
         };
 
         // Initialize reroute subsystem (builds CCH, prediction service).
@@ -339,6 +377,7 @@ impl SimWorld {
             sim_startup::build_loop_detectors(&road_graph, &signal_config, &signalized_nodes);
 
         let junction_data = velos_net::junction::precompute_all_junctions(&road_graph);
+        let edge_to_zone = build_edge_to_zone(&road_graph, &zone_centroids);
 
         Self {
             world: World::new(),
@@ -374,6 +413,15 @@ impl SimWorld {
             next_bus_route_index: 0,
             gtfs_route_indices: HashMap::new(),
             junction_data,
+            api_bridge: None,
+            camera_registry: Arc::new(Mutex::new(CameraRegistry::new())),
+            aggregator: Arc::new(Mutex::new(DetectionAggregator::default())),
+            calibration_store: CalibrationStore::new(),
+            calibration_states: HashMap::new(),
+            simulated_counts: HashMap::new(),
+            last_calibration_time: 0.0,
+            edge_to_zone,
+            show_calibration_panel: false,
         }
     }
 
@@ -470,6 +518,9 @@ impl SimWorld {
         // Update sim_time on dispatcher for WGSL school zone time windows.
         dispatcher.sim_time = self.sim_time as f32;
 
+        // 0. Drain pending API commands from gRPC bridge
+        self.step_api_commands();
+
         // 1. Spawn new agents
         self.spawn_agents(dt);
 
@@ -520,6 +571,9 @@ impl SimWorld {
         // 8.5. Prediction overlay refresh (every 60 sim-seconds)
         self.step_prediction();
 
+        // 8.6. Calibration overlay refresh (every 300 sim-seconds)
+        self.step_calibration();
+
         // 9. Pedestrians (GPU adaptive pipeline)
         self.step_pedestrians_gpu(dt, device, queue);
 
@@ -546,6 +600,9 @@ impl SimWorld {
 
         let dt = base_dt * self.speed_mult as f64;
         self.sim_time += dt;
+
+        // 0. Drain pending API commands from gRPC bridge
+        self.step_api_commands();
 
         self.spawn_agents(dt);
 
@@ -574,6 +631,7 @@ impl SimWorld {
         crate::cpu_reference::step_motorbikes_sublane(self, dt, &spatial, &snapshot);
         self.step_bus_dwell(dt);
         self.step_prediction();
+        self.step_calibration();
         self.step_pedestrians(dt, &spatial, &snapshot);
 
         self.detect_gridlock();

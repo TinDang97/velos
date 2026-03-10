@@ -27,7 +27,16 @@ impl SimWorld {
 
     pub(crate) fn spawn_agents(&mut self, dt: f64) {
         let sim_hour = self.sim_time / 3600.0;
-        let requests = self.spawner.generate_spawns(sim_hour, dt);
+
+        // Use calibrated spawns when calibration overlay has factors
+        let overlay = self.calibration_store.current();
+        let requests = if overlay.factors.is_empty() {
+            self.spawner.generate_spawns(sim_hour, dt)
+        } else {
+            self.spawner.generate_spawns_calibrated(sim_hour, dt, &overlay.factors)
+        };
+        drop(overlay);
+
         for req in requests.iter().take(Self::SPAWN_CAP_PER_TICK) {
             self.spawn_single_agent(req);
         }
