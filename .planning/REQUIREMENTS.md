@@ -22,10 +22,10 @@ Requirements for Digital Twin milestone. Each maps to roadmap phases.
 ### Detection Ingestion
 
 - [x] **DET-01**: System exposes gRPC service accepting vehicle/pedestrian detection events from external CV services
-- [ ] **DET-02**: System aggregates received detections into per-class counts per camera over configurable time windows
-- [ ] **DET-03**: User can register cameras with position, FOV, and network edge/junction mapping via gRPC or config
+- [x] **DET-02**: System aggregates received detections into per-class counts per camera over configurable time windows
+- [x] **DET-03**: User can register cameras with position, FOV, and network edge/junction mapping via gRPC or config
 - [ ] **DET-04**: User can see camera positions and FOV coverage areas overlaid on the map
-- [ ] **DET-05**: System accepts speed estimation data from external CV services per camera
+- [x] **DET-05**: System accepts speed estimation data from external CV services per camera
 - [ ] **DET-06**: Python and Rust client libraries connect to VELOS gRPC detection service for integration testing
 
 ### Calibration
@@ -88,10 +88,10 @@ Deferred to future release. Tracked but not in current roadmap.
 | MAP-01 | Phase 16 | Complete |
 | MAP-02 | Phase 16 | Complete |
 | DET-01 | Phase 17 | Complete |
-| DET-02 | Phase 17 | Pending |
-| DET-03 | Phase 17 | Pending |
+| DET-02 | Phase 17 | Complete |
+| DET-03 | Phase 17 | Complete |
 | DET-04 | Phase 17 | Pending |
-| DET-05 | Phase 17 | Pending |
+| DET-05 | Phase 17 | Complete |
 | DET-06 | Phase 17 | Pending |
 | CAL-01 | Phase 17 | Pending |
 | CAL-02 | Phase 20 | Pending |

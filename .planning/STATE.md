@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Digital Twin
 status: in-progress
-stopped_at: Completed 17-01-PLAN.md
-last_updated: "2026-03-10T08:15:36Z"
-last_activity: 2026-03-10 -- Phase 17 Plan 01 complete (API scaffold, proto, bridge)
+stopped_at: Completed 17-02-PLAN.md
+last_updated: "2026-03-10T08:23:48Z"
+last_activity: 2026-03-10 -- Phase 17 Plan 02 complete (CameraRegistry, DetectionAggregator, DetectionService)
 progress:
   total_phases: 5
   completed_phases: 1
   total_plans: 4
-  completed_plans: 1
-  percent: 87
+  completed_plans: 2
+  percent: 90
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-03-09)
 ## Current Position
 
 Phase: 17 of 20 (Detection Ingestion & Demand Calibration)
-Plan: 1 of 4 in current phase (complete)
+Plan: 2 of 4 in current phase (complete)
 Status: In Progress
-Last activity: 2026-03-10 -- Phase 17 Plan 01 complete (API scaffold, proto, bridge)
+Last activity: 2026-03-10 -- Phase 17 Plan 02 complete (CameraRegistry, DetectionAggregator, DetectionService)
 
-Progress: [████████░░] 87% (v1.2)
+Progress: [█████████░] 90% (v1.2)
 
 ## Accumulated Context
 
@@ -39,6 +39,10 @@ Progress: [████████░░] 87% (v1.2)
 Decisions are logged in PROJECT.md Key Decisions table.
 Recent decisions affecting current work:
 
+- [17-02]: edges_in_fov uses AABB pre-filter + angle normalization to [-PI, PI] for wraparound correctness
+- [17-02]: DetectionAggregator uses i32 keys (prost proto encoding) for vehicle class, not Rust enum
+- [17-02]: DetectionServiceImpl holds Arc<RTree> and Arc<Projection> for local camera registration
+- [17-02]: ReceiverStream + tokio::spawn for bidirectional streaming response pattern
 - [17-01]: tonic-prost-build replaces tonic-build::compile_protos (API split in tonic 0.14)
 - [17-01]: Bounded mpsc channel (256) with drain(budget) for per-frame command processing
 - [17-01]: Oneshot reply channel in RegisterCamera ApiCommand for request-response pattern
@@ -74,6 +78,6 @@ Recent decisions affecting current work:
 
 ## Session Continuity
 
-Last session: 2026-03-10T08:15:36Z
-Stopped at: Completed 17-01-PLAN.md
-Resume file: .planning/phases/17-detection-ingestion-demand-calibration/17-02-PLAN.md
+Last session: 2026-03-10T08:23:48Z
+Stopped at: Completed 17-02-PLAN.md
+Resume file: .planning/phases/17-detection-ingestion-demand-calibration/17-03-PLAN.md
