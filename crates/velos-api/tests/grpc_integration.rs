@@ -85,16 +85,9 @@ async fn start_test_server() -> (String, mpsc::Receiver<ApiCommand>) {
 async fn test_register_camera() {
     let (addr, mut cmd_rx) = start_test_server().await;
 
-    // Spawn a task to handle the RegisterCamera command on the bridge
+    // Drain bridge commands (fire-and-forget, no reply needed)
     tokio::spawn(async move {
-        while let Some(cmd) = cmd_rx.recv().await {
-            if let ApiCommand::RegisterCamera { reply, .. } = cmd {
-                let _ = reply.send(velos_api::RegisterCameraResponse {
-                    camera_id: 1,
-                    covered_edge_ids: vec![1, 2],
-                });
-            }
-        }
+        while let Some(_cmd) = cmd_rx.recv().await {}
     });
 
     let mut client = DetectionServiceClient::connect(addr).await.unwrap();
@@ -122,16 +115,9 @@ async fn test_register_camera() {
 async fn test_list_cameras() {
     let (addr, mut cmd_rx) = start_test_server().await;
 
-    // Handle bridge commands
+    // Drain bridge commands (fire-and-forget)
     tokio::spawn(async move {
-        while let Some(cmd) = cmd_rx.recv().await {
-            if let ApiCommand::RegisterCamera { reply, .. } = cmd {
-                let _ = reply.send(velos_api::RegisterCameraResponse {
-                    camera_id: 0,
-                    covered_edge_ids: vec![],
-                });
-            }
-        }
+        while let Some(_cmd) = cmd_rx.recv().await {}
     });
 
     let mut client = DetectionServiceClient::connect(addr).await.unwrap();
@@ -172,21 +158,9 @@ async fn test_list_cameras() {
 async fn test_stream_detections() {
     let (addr, mut cmd_rx) = start_test_server().await;
 
-    // Handle bridge commands: register camera first, then accept batches
+    // Drain bridge commands (all fire-and-forget now)
     tokio::spawn(async move {
-        while let Some(cmd) = cmd_rx.recv().await {
-            match cmd {
-                ApiCommand::RegisterCamera { reply, .. } => {
-                    let _ = reply.send(velos_api::RegisterCameraResponse {
-                        camera_id: 1,
-                        covered_edge_ids: vec![1],
-                    });
-                }
-                ApiCommand::DetectionBatch { .. } => {
-                    // fire-and-forget, no action needed
-                }
-            }
-        }
+        while let Some(_cmd) = cmd_rx.recv().await {}
     });
 
     let mut client = DetectionServiceClient::connect(addr).await.unwrap();

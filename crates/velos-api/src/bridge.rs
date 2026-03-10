@@ -4,9 +4,9 @@
 //! from gRPC handlers (async) to the simulation frame loop (sync via `try_recv`).
 //! Request-response patterns use oneshot channels embedded in the command variant.
 
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::mpsc;
 
-use crate::proto::velos::v2::{DetectionBatch, RegisterCameraRequest, RegisterCameraResponse};
+use crate::proto::velos::v2::{DetectionBatch, RegisterCameraRequest};
 
 /// Default bounded channel capacity. Large enough to absorb detection bursts
 /// without unbounded growth; small enough to apply backpressure when the
@@ -16,13 +16,12 @@ pub const DEFAULT_CHANNEL_CAPACITY: usize = 256;
 /// Commands sent from gRPC handlers to the simulation world.
 #[derive(Debug)]
 pub enum ApiCommand {
-    /// Register a new camera. The oneshot sender receives the response with
-    /// assigned camera_id and covered edge IDs.
+    /// Notify the simulation world that a new camera was registered.
+    /// Fire-and-forget; camera is already registered in the shared registry
+    /// by the gRPC handler before this command is sent.
     RegisterCamera {
         /// The registration request from the gRPC client.
         request: RegisterCameraRequest,
-        /// Oneshot channel for the response back to the gRPC handler.
-        reply: oneshot::Sender<RegisterCameraResponse>,
     },
 
     /// A batch of detection events to ingest. Fire-and-forget; the gRPC handler
@@ -105,10 +104,9 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn bridge_register_camera_with_oneshot() {
+    async fn bridge_register_camera_fire_and_forget() {
         let (mut bridge, tx) = ApiBridge::new(16);
 
-        let (reply_tx, reply_rx) = oneshot::channel();
         let request = RegisterCameraRequest {
             lat: 10.775,
             lon: 106.700,
@@ -118,29 +116,17 @@ mod tests {
             name: "test-cam".into(),
         };
 
-        tx.send(ApiCommand::RegisterCamera {
-            request,
-            reply: reply_tx,
-        })
-        .await
-        .expect("send should succeed");
+        tx.send(ApiCommand::RegisterCamera { request })
+            .await
+            .expect("send should succeed");
 
         let cmd = bridge.try_recv().expect("should receive command");
         match cmd {
-            ApiCommand::RegisterCamera { request, reply } => {
+            ApiCommand::RegisterCamera { request } => {
                 assert_eq!(request.name, "test-cam");
-                let response = RegisterCameraResponse {
-                    camera_id: 1,
-                    covered_edge_ids: vec![10, 20, 30],
-                };
-                reply.send(response).expect("reply should succeed");
             }
             _ => panic!("expected RegisterCamera"),
         }
-
-        let response = reply_rx.await.expect("should receive response");
-        assert_eq!(response.camera_id, 1);
-        assert_eq!(response.covered_edge_ids, vec![10, 20, 30]);
     }
 
     #[tokio::test]

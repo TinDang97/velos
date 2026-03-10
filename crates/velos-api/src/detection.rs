@@ -120,34 +120,22 @@ impl DetectionService for DetectionServiceImpl {
     ) -> Result<Response<RegisterCameraResponse>, Status> {
         let req = request.into_inner();
 
-        // Register camera locally (computes covered edges)
+        // Register camera locally (computes covered edges via shared registry)
         let camera = {
             let mut reg = self.registry.lock().unwrap();
             reg.register(&req, &self.edge_tree, &self.projection)
         };
 
-        // Forward to simulation world via bridge with oneshot reply
-        let (reply_tx, reply_rx) = tokio::sync::oneshot::channel();
-        self.cmd_tx
-            .send(ApiCommand::RegisterCamera {
-                request: req,
-                reply: reply_tx,
-            })
-            .await
-            .map_err(|_| Status::unavailable("simulation disconnected"))?;
+        // Notify simulation world (fire-and-forget — camera already in shared registry)
+        let _ = self
+            .cmd_tx
+            .send(ApiCommand::RegisterCamera { request: req })
+            .await;
 
-        // Await reply with timeout
-        match tokio::time::timeout(std::time::Duration::from_secs(5), reply_rx).await {
-            Ok(Ok(_response)) => {
-                // Use local camera data (SimWorld may enhance the response later)
-                Ok(Response::new(RegisterCameraResponse {
-                    camera_id: camera.id,
-                    covered_edge_ids: camera.covered_edges,
-                }))
-            }
-            Ok(Err(_)) => Err(Status::internal("simulation dropped reply channel")),
-            Err(_) => Err(Status::deadline_exceeded("camera registration timed out")),
-        }
+        Ok(Response::new(RegisterCameraResponse {
+            camera_id: camera.id,
+            covered_edge_ids: camera.covered_edges,
+        }))
     }
 
     async fn list_cameras(

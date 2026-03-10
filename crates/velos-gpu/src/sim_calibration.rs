@@ -7,7 +7,6 @@ use std::collections::HashMap;
 
 use velos_api::bridge::ApiCommand;
 use velos_api::calibration::compute_calibration_factors;
-use velos_api::proto::velos::v2::RegisterCameraResponse;
 use velos_core::components::RoadPosition;
 use velos_demand::Zone;
 use velos_net::RoadGraph;
@@ -77,31 +76,12 @@ impl SimWorld {
         let commands = bridge.drain(MAX_COMMANDS_PER_FRAME);
         for cmd in commands {
             match cmd {
-                ApiCommand::RegisterCamera { request, reply } => {
-                    // Camera is already registered locally in the gRPC handler.
-                    // Here we just acknowledge via the oneshot channel.
-                    let camera = {
-                        let reg = self.camera_registry.lock().unwrap();
-                        reg.get(reg.list().last().map(|c| c.id).unwrap_or(0))
-                            .cloned()
-                    };
-
-                    let response = if let Some(cam) = camera {
-                        RegisterCameraResponse {
-                            camera_id: cam.id,
-                            covered_edge_ids: cam.covered_edges.clone(),
-                        }
-                    } else {
-                        // Fallback: use request name as camera wasn't found
-                        RegisterCameraResponse {
-                            camera_id: 0,
-                            covered_edge_ids: vec![],
-                        }
-                    };
-
-                    let _ = reply.send(response);
+                ApiCommand::RegisterCamera { request } => {
+                    // Camera is already registered in the shared registry by the
+                    // gRPC handler. This notification lets SimWorld update any
+                    // local bookkeeping (e.g., edge-to-zone mapping refresh).
                     log::info!(
-                        "Registered camera '{}' via SimWorld bridge",
+                        "SimWorld notified of camera registration: '{}'",
                         request.name
                     );
                 }
