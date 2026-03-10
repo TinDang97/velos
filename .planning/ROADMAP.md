@@ -35,7 +35,7 @@
 
 </details>
 
-### 🚧 v1.2 Digital Twin (In Progress)
+### v1.2 Digital Twin (In Progress)
 
 **Milestone Goal:** Complete the digital twin loop with intersection sublane correctness, real-world camera detection ingestion for demand calibration, and 3D native city visualization with agent rendering.
 
@@ -92,7 +92,12 @@ Plans:
   3. Agents render as 3D meshes when close, billboards at mid-range, and dots when far -- all via GPU instancing
   4. User can toggle between 2D top-down and 3D perspective with a single click, preserving camera position
   5. Scene lighting changes with simulation time-of-day (bright directional sun during day, dim ambient at night)
-**Plans**: [To be planned]
+**Plans**: 4 plans
+Plans:
+- [ ] 18-01-PLAN.md — OrbitCamera, ViewMode types, depth buffer, and Renderer3D scaffold
+- [ ] 18-02-PLAN.md — Road surface polygons, lane markings, and junction fills from RoadGraph
+- [ ] 18-03-PLAN.md — Lighting system, glTF mesh loader, LOD classification, and 3D agent shaders
+- [ ] 18-04-PLAN.md — View toggle wiring, orbit camera input, render dispatch, and visual verification
 
 ### Phase 19: 3D City Scene
 **Goal**: The 3D view includes extruded buildings from OSM data and terrain from SRTM DEM, creating a recognizable HCMC cityscape
@@ -136,11 +141,11 @@ Phase 16 first (foundation). Phases 17 + 18 in parallel after 16. Phase 19 after
 | 14. Wire GTFS → Bus Stops Pipeline | v1.1 | 2/2 | Complete | 2026-03-08 |
 | 15. File Size Reduction & Housekeeping | v1.1 | 3/3 | Complete | 2026-03-08 |
 | 16. Intersection Sublane Model | v1.2 | 4/4 | Complete | 2026-03-09 |
-| 17. Detection Ingestion & Demand Calibration | v1.2 | Complete    | 2026-03-10 | 2026-03-10 |
-| 18. 3D Rendering Core | v1.2 | 0/? | Not started | - |
+| 17. Detection Ingestion & Demand Calibration | v1.2 | 4/4 | Complete | 2026-03-10 |
+| 18. 3D Rendering Core | v1.2 | 0/4 | Planned | - |
 | 19. 3D City Scene | v1.2 | 0/? | Not started | - |
 | 20. Real-Time Calibration | v1.2 | 0/? | Not started | - |
 
 ---
 *Roadmap created: 2026-03-09*
-*Last updated: 2026-03-10 (Phase 17 plans created)*
+*Last updated: 2026-03-10 (Phase 18 plans created)*
