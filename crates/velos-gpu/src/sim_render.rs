@@ -9,7 +9,10 @@ use velos_core::components::{
 use velos_signal::plan::PhaseState;
 use velos_vehicle::bus::BusState;
 
-use crate::renderer::AgentInstance;
+use velos_api::Camera;
+use velos_net::EquirectangularProjection;
+
+use crate::renderer::{AgentInstance, GuideLineVertex};
 use crate::sim::SimWorld;
 
 /// Return the standard display color for a given vehicle type.
@@ -52,6 +55,183 @@ const BUS_ROUTE_COLORS: [[f32; 4]; 8] = [
     [0.0, 0.8, 0.8, 1.0],    // teal
     [0.9, 0.4, 0.6, 1.0],    // rose
 ];
+
+/// Number of arc segments for FOV cone rendering.
+const FOV_CONE_ARC_SEGMENTS: usize = 12;
+
+/// Build camera overlay vertices: a diamond icon at camera position and
+/// a semi-transparent FOV cone polygon for each registered camera.
+///
+/// Called from the application render loop when cameras are registered.
+///
+/// Returns `GuideLineVertex` data suitable for `Renderer::update_camera_overlay`.
+/// The cone is rendered as a triangle fan from the camera position to an arc
+/// at `range_m` distance, spanning `heading +/- fov/2`.
+///
+/// The `projection` converts camera lat/lon to local metres matching the
+/// road network coordinate system.
+pub fn build_camera_overlay_vertices(
+    cameras: &[&Camera],
+    projection: &EquirectangularProjection,
+    show_cameras: bool,
+) -> Vec<GuideLineVertex> {
+    if !show_cameras || cameras.is_empty() {
+        return Vec::new();
+    }
+
+    let mut vertices = Vec::new();
+
+    // Camera icon color: bright yellow, opaque.
+    let icon_color = [1.0_f32, 0.9, 0.0, 0.9];
+    // FOV cone fill: semi-transparent cyan.
+    let cone_fill_color = [0.0_f32, 0.8, 1.0, 0.15];
+    // FOV cone outline: brighter cyan.
+    let cone_outline_color = [0.0_f32, 0.8, 1.0, 0.6];
+    // Outline width in metres.
+    let outline_width = 1.5_f32;
+
+    for cam in cameras {
+        let (cx, cy) = projection.project(cam.lat, cam.lon);
+        let cx = cx as f32;
+        let cy = cy as f32;
+
+        // --- Camera icon: small diamond (4 triangles forming a square rotated 45deg) ---
+        let icon_size = 4.0_f32; // metres
+        let base = GuideLineVertex {
+            position: [0.0, 0.0],
+            color: icon_color,
+            line_dist: 0.0,
+            _pad: 0.0,
+        };
+        // Diamond vertices: top, right, bottom, left
+        let top = [cx, cy + icon_size];
+        let right = [cx + icon_size, cy];
+        let bottom = [cx, cy - icon_size];
+        let left = [cx - icon_size, cy];
+        // 4 triangles: center-based fan
+        let center = [cx, cy];
+        for &(a, b) in &[(top, right), (right, bottom), (bottom, left), (left, top)] {
+            let mut v0 = base;
+            v0.position = center;
+            let mut v1 = base;
+            v1.position = a;
+            let mut v2 = base;
+            v2.position = b;
+            vertices.push(v0);
+            vertices.push(v1);
+            vertices.push(v2);
+        }
+
+        // --- FOV cone: triangle fan from camera position to arc at range_m ---
+        // Convert heading from degrees (0=north, clockwise) to radians (math convention).
+        // Math convention: 0=east, CCW. North in heading = PI/2 in math.
+        // heading_math = PI/2 - heading_deg_to_rad
+        let heading_rad =
+            std::f32::consts::FRAC_PI_2 - cam.heading_deg.to_radians();
+        let half_fov_rad = (cam.fov_deg / 2.0).to_radians();
+        let range = cam.range_m;
+
+        let start_angle = heading_rad - half_fov_rad;
+        let end_angle = heading_rad + half_fov_rad;
+        let angle_step = (end_angle - start_angle) / FOV_CONE_ARC_SEGMENTS as f32;
+
+        // Cone fill triangles (triangle fan)
+        let cone_base = GuideLineVertex {
+            position: [0.0, 0.0],
+            color: cone_fill_color,
+            line_dist: 0.0,
+            _pad: 0.0,
+        };
+
+        for i in 0..FOV_CONE_ARC_SEGMENTS {
+            let a0 = start_angle + i as f32 * angle_step;
+            let a1 = start_angle + (i + 1) as f32 * angle_step;
+
+            let p0 = [cx + range * a0.cos(), cy + range * a0.sin()];
+            let p1 = [cx + range * a1.cos(), cy + range * a1.sin()];
+
+            let mut v_center = cone_base;
+            v_center.position = [cx, cy];
+            let mut v0 = cone_base;
+            v0.position = p0;
+            let mut v1 = cone_base;
+            v1.position = p1;
+            vertices.push(v_center);
+            vertices.push(v0);
+            vertices.push(v1);
+        }
+
+        // Cone outline: left edge, right edge, and arc
+        let outline_base = GuideLineVertex {
+            position: [0.0, 0.0],
+            color: cone_outline_color,
+            line_dist: 0.0,
+            _pad: 0.0,
+        };
+        let hw = outline_width / 2.0;
+
+        // Left edge: from camera to left FOV boundary
+        {
+            let dx = start_angle.cos();
+            let dy = start_angle.sin();
+            // Normal perpendicular to the edge direction
+            let nx = -dy;
+            let ny = dx;
+            let p0 = [cx, cy];
+            let p1 = [cx + range * dx, cy + range * dy];
+            let mut v = [outline_base; 6];
+            v[0].position = [p0[0] + nx * hw, p0[1] + ny * hw];
+            v[1].position = [p0[0] - nx * hw, p0[1] - ny * hw];
+            v[2].position = [p1[0] + nx * hw, p1[1] + ny * hw];
+            v[3].position = [p0[0] - nx * hw, p0[1] - ny * hw];
+            v[4].position = [p1[0] - nx * hw, p1[1] - ny * hw];
+            v[5].position = [p1[0] + nx * hw, p1[1] + ny * hw];
+            vertices.extend_from_slice(&v);
+        }
+
+        // Right edge: from camera to right FOV boundary
+        {
+            let dx = end_angle.cos();
+            let dy = end_angle.sin();
+            let nx = -dy;
+            let ny = dx;
+            let p0 = [cx, cy];
+            let p1 = [cx + range * dx, cy + range * dy];
+            let mut v = [outline_base; 6];
+            v[0].position = [p0[0] + nx * hw, p0[1] + ny * hw];
+            v[1].position = [p0[0] - nx * hw, p0[1] - ny * hw];
+            v[2].position = [p1[0] + nx * hw, p1[1] + ny * hw];
+            v[3].position = [p0[0] - nx * hw, p0[1] - ny * hw];
+            v[4].position = [p1[0] - nx * hw, p1[1] - ny * hw];
+            v[5].position = [p1[0] + nx * hw, p1[1] + ny * hw];
+            vertices.extend_from_slice(&v);
+        }
+
+        // Arc outline: quad strip along the arc
+        for i in 0..FOV_CONE_ARC_SEGMENTS {
+            let a0 = start_angle + i as f32 * angle_step;
+            let a1 = start_angle + (i + 1) as f32 * angle_step;
+
+            let p0 = [cx + range * a0.cos(), cy + range * a0.sin()];
+            let p1 = [cx + range * a1.cos(), cy + range * a1.sin()];
+
+            // Normal points outward from center
+            let n0 = [a0.cos(), a0.sin()];
+            let n1 = [a1.cos(), a1.sin()];
+
+            let mut v = [outline_base; 6];
+            v[0].position = [p0[0] - n0[0] * hw, p0[1] - n0[1] * hw];
+            v[1].position = [p0[0] + n0[0] * hw, p0[1] + n0[1] * hw];
+            v[2].position = [p1[0] - n1[0] * hw, p1[1] - n1[1] * hw];
+            v[3].position = [p0[0] + n0[0] * hw, p0[1] + n0[1] * hw];
+            v[4].position = [p1[0] + n1[0] * hw, p1[1] + n1[1] * hw];
+            v[5].position = [p1[0] - n1[0] * hw, p1[1] - n1[1] * hw];
+            vertices.extend_from_slice(&v);
+        }
+    }
+
+    vertices
+}
 
 impl SimWorld {
     /// Build per-type instance arrays for rendering.
@@ -216,6 +396,7 @@ impl SimWorld {
 mod tests {
     use super::*;
     use std::f64::consts::FRAC_PI_4;
+    use velos_net::EquirectangularProjection;
 
     #[test]
     fn vehicle_type_color_motorbike_orange() {
@@ -278,5 +459,72 @@ mod tests {
         // Zero tangent: atan2(0, 0) = 0 on most platforms, but let's test NaN explicitly
         let h = heading_from_tangent([f64::NAN, 0.0], 42.0);
         assert_eq!(h, 42.0);
+    }
+
+    #[test]
+    fn camera_overlay_empty_when_disabled() {
+        let cam = Camera {
+            id: 1,
+            lat: 10.7756,
+            lon: 106.7019,
+            heading_deg: 90.0,
+            fov_deg: 60.0,
+            range_m: 50.0,
+            name: "test".to_string(),
+            covered_edges: vec![],
+        };
+        let proj = EquirectangularProjection::new(10.7756, 106.7019);
+        let verts = build_camera_overlay_vertices(&[&cam], &proj, false);
+        assert!(verts.is_empty(), "disabled overlay should produce no vertices");
+    }
+
+    #[test]
+    fn camera_overlay_empty_when_no_cameras() {
+        let proj = EquirectangularProjection::new(10.7756, 106.7019);
+        let verts = build_camera_overlay_vertices(&[], &proj, true);
+        assert!(verts.is_empty(), "no cameras should produce no vertices");
+    }
+
+    #[test]
+    fn camera_overlay_produces_vertices_for_one_camera() {
+        let cam = Camera {
+            id: 1,
+            lat: 10.7756,
+            lon: 106.7019,
+            heading_deg: 0.0,
+            fov_deg: 60.0,
+            range_m: 100.0,
+            name: "cam-1".to_string(),
+            covered_edges: vec![],
+        };
+        let proj = EquirectangularProjection::new(10.7756, 106.7019);
+        let verts = build_camera_overlay_vertices(&[&cam], &proj, true);
+
+        // Icon: 4 triangles * 3 verts = 12
+        // Cone fill: FOV_CONE_ARC_SEGMENTS * 3 verts = 36
+        // Left edge outline: 6 verts
+        // Right edge outline: 6 verts
+        // Arc outline: FOV_CONE_ARC_SEGMENTS * 6 verts = 72
+        // Total: 12 + 36 + 6 + 6 + 72 = 132
+        let expected = 12 + FOV_CONE_ARC_SEGMENTS * 3 + 6 + 6 + FOV_CONE_ARC_SEGMENTS * 6;
+        assert_eq!(verts.len(), expected, "vertex count mismatch for single camera");
+    }
+
+    #[test]
+    fn camera_overlay_scales_with_camera_count() {
+        let proj = EquirectangularProjection::new(10.7756, 106.7019);
+        let cam1 = Camera {
+            id: 1, lat: 10.775, lon: 106.700,
+            heading_deg: 0.0, fov_deg: 90.0, range_m: 50.0,
+            name: "a".into(), covered_edges: vec![],
+        };
+        let cam2 = Camera {
+            id: 2, lat: 10.776, lon: 106.701,
+            heading_deg: 180.0, fov_deg: 45.0, range_m: 30.0,
+            name: "b".into(), covered_edges: vec![],
+        };
+        let v1 = build_camera_overlay_vertices(&[&cam1], &proj, true);
+        let v2 = build_camera_overlay_vertices(&[&cam1, &cam2], &proj, true);
+        assert_eq!(v2.len(), v1.len() * 2, "two cameras should produce 2x vertices");
     }
 }

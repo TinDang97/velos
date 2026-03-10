@@ -123,14 +123,16 @@ struct RoadLineVertex {
     color: [f32; 4],
 }
 
-/// Guide line vertex: position + color + distance along line for dash pattern.
+/// Overlay vertex: position + color + distance along line for dash pattern.
+///
+/// Used by guide lines, debug overlays, and camera FOV cone overlays.
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
-struct GuideLineVertex {
-    position: [f32; 2],
-    color: [f32; 4],
-    line_dist: f32,
-    _pad: f32,
+pub struct GuideLineVertex {
+    pub position: [f32; 2],
+    pub color: [f32; 4],
+    pub line_dist: f32,
+    pub _pad: f32,
 }
 
 /// Number of sample points per Bezier curve for guide line generation.
@@ -175,6 +177,10 @@ pub struct Renderer {
     debug_overlay_buffer: Option<wgpu::Buffer>,
     /// Number of vertices in the debug overlay buffer.
     debug_overlay_vertex_count: u32,
+    /// GPU vertex buffer for camera FOV cone overlay.
+    camera_overlay_buffer: Option<wgpu::Buffer>,
+    /// Number of vertices in the camera overlay buffer.
+    camera_overlay_vertex_count: u32,
 }
 
 impl Renderer {
@@ -424,6 +430,8 @@ impl Renderer {
             guide_line_vertex_count: 0,
             debug_overlay_buffer: None,
             debug_overlay_vertex_count: 0,
+            camera_overlay_buffer: None,
+            camera_overlay_vertex_count: 0,
         }
     }
 
@@ -553,12 +561,14 @@ impl Renderer {
     ///
     /// When `show_guide_lines` is true, renders dashed Bezier guide lines.
     /// When `show_conflict_debug` is true, renders conflict crossing points.
+    /// When `show_cameras` is true, renders camera FOV cone overlays.
     pub fn render_frame(
         &self,
         encoder: &mut wgpu::CommandEncoder,
         view: &wgpu::TextureView,
         show_guide_lines: bool,
         show_conflict_debug: bool,
+        show_cameras: bool,
     ) {
         // Render map tiles first (clears the screen).
         // If map tiles exist, agents render on top with LoadOp::Load.
@@ -661,6 +671,18 @@ impl Renderer {
             pass.set_bind_group(0, &self.camera_bind_group, &[]);
             pass.set_vertex_buffer(0, buf.slice(..));
             pass.draw(0..self.debug_overlay_vertex_count, 0..1);
+        }
+
+        // Draw camera FOV cone overlay (semi-transparent cones + icons).
+        // Reuses guide_line_pipeline (same vertex format, solid color).
+        if show_cameras
+            && let Some(ref buf) = self.camera_overlay_buffer
+            && self.camera_overlay_vertex_count > 0
+        {
+            pass.set_pipeline(&self.guide_line_pipeline);
+            pass.set_bind_group(0, &self.camera_bind_group, &[]);
+            pass.set_vertex_buffer(0, buf.slice(..));
+            pass.draw(0..self.camera_overlay_vertex_count, 0..1);
         }
     }
 
@@ -880,6 +902,33 @@ impl Renderer {
             "Uploaded {} debug overlay vertices ({} conflict points)",
             vertices.len(),
             vertices.len() / 6,
+        );
+    }
+
+    /// Upload camera FOV cone overlay geometry.
+    ///
+    /// Accepts pre-built `GuideLineVertex` data from `build_camera_overlay_vertices`.
+    /// Replaces any previous camera overlay buffer.
+    pub fn update_camera_overlay(
+        &mut self,
+        device: &wgpu::Device,
+        vertices: Vec<GuideLineVertex>,
+    ) {
+        self.camera_overlay_vertex_count = vertices.len() as u32;
+        if !vertices.is_empty() {
+            self.camera_overlay_buffer = Some(device.create_buffer_init(
+                &wgpu::util::BufferInitDescriptor {
+                    label: Some("camera_overlay_vertices"),
+                    contents: bytemuck::cast_slice(&vertices),
+                    usage: wgpu::BufferUsages::VERTEX,
+                },
+            ));
+        } else {
+            self.camera_overlay_buffer = None;
+        }
+        log::info!(
+            "Uploaded {} camera overlay vertices",
+            vertices.len(),
         );
     }
 
