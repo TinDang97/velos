@@ -218,6 +218,8 @@ pub struct SimWorld {
     pub show_calibration_panel: bool,
     /// User toggle to freeze calibration (prevents overlay updates when set).
     pub(crate) calibration_paused: bool,
+    /// Detection-only mode: skip base OD spawning, only spawn via calibration factors.
+    pub(crate) detection_only_spawning: bool,
     /// Per-camera last processed aggregation window start_ms for change detection.
     pub(crate) last_processed_windows: HashMap<u32, i64>,
     /// Last sim time when calibration polling checked for new windows.
@@ -346,6 +348,7 @@ impl SimWorld {
             edge_to_zone,
             show_calibration_panel: false,
             calibration_paused: false,
+            detection_only_spawning: false,
             last_processed_windows: HashMap::new(),
             last_calibration_poll_time: 0.0,
         };
@@ -433,6 +436,7 @@ impl SimWorld {
             edge_to_zone,
             show_calibration_panel: false,
             calibration_paused: false,
+            detection_only_spawning: false,
             last_processed_windows: HashMap::new(),
             last_calibration_poll_time: 0.0,
         }

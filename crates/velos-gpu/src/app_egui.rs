@@ -172,6 +172,8 @@ fn draw_calibration_panel(ui: &mut egui::Ui, sim: &mut SimWorld, _grpc_addr: &st
         ui.label(status_label);
         ui.separator();
         ui.checkbox(&mut sim.calibration_paused, "Pause");
+        ui.separator();
+        ui.checkbox(&mut sim.detection_only_spawning, "Det. Only");
     });
 
     // --- 2. Global summary (compact, 2 rows) ---

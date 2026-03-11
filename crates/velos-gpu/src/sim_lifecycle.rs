@@ -30,7 +30,10 @@ impl SimWorld {
 
         // Use calibrated spawns when calibration overlay has factors
         let overlay = self.calibration_store.current();
-        let requests = if overlay.factors.is_empty() {
+        let requests = if self.detection_only_spawning && overlay.factors.is_empty() {
+            // Detection-only mode with no calibration data yet: skip spawning
+            Vec::new()
+        } else if overlay.factors.is_empty() {
             self.spawner.generate_spawns(sim_hour, dt)
         } else {
             self.spawner.generate_spawns_calibrated(sim_hour, dt, &overlay.factors)
