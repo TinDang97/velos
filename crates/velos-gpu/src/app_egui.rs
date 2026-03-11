@@ -169,12 +169,11 @@ fn draw_calibration_panel(ui: &mut egui::Ui, sim: &mut SimWorld, grpc_addr: &str
         let (rect, _) = ui.allocate_exact_size(egui::vec2(10.0, 10.0), egui::Sense::hover());
         ui.painter().rect_filled(rect, 5.0, status_color);
         ui.label(status_label);
+        ui.separator();
+        ui.checkbox(&mut sim.calibration_paused, "Pause");
     });
 
-    ui.checkbox(&mut sim.calibration_paused, "Pause Calibration");
-    ui.label(format!("gRPC: {grpc_addr}"));
-
-    // --- 2. Global summary ---
+    // --- 2. Global summary (compact, 2 rows) ---
     let active_count = camera_data.iter().filter(|(_, _, _, _, s)| *s < 3).count();
     let mean_ratio = if camera_data.is_empty() {
         1.0
@@ -184,42 +183,45 @@ fn draw_calibration_panel(ui: &mut egui::Ui, sim: &mut SimWorld, grpc_addr: &str
     };
     let secs_since = (sim.sim_time - sim.last_calibration_time).max(0.0) as u64;
 
-    ui.separator();
-    ui.horizontal(|ui| {
-        ui.label(format!("Active: {active_count}"));
-        ui.separator();
-        ui.label(format!("Mean ratio: {mean_ratio:.2}"));
-        ui.separator();
-        ui.label(format!("Last cal: {secs_since}s ago"));
-    });
+    ui.small(format!(
+        "Active: {} | Avg: {:.2} | {grpc_addr}",
+        active_count, mean_ratio
+    ));
+    ui.small(format!("Last cal: {}s ago", secs_since));
 
-    // --- 3. Per-camera grid ---
+    // --- 3. Per-camera grid (compact) ---
     if !camera_data.is_empty() {
         ui.separator();
         egui::Grid::new("calibration_grid")
             .striped(true)
+            .min_col_width(0.0)
+            .spacing(egui::vec2(4.0, 2.0))
             .show(ui, |ui| {
-                ui.label("Camera");
-                ui.label("Obs");
-                ui.label("Sim");
-                ui.label("Ratio");
-                ui.label("Status");
+                ui.small("Cam");
+                ui.small("Obs");
+                ui.small("Sim");
+                ui.small("Ratio");
                 ui.end_row();
 
                 for (name, obs, sim_count, ratio, stale) in &camera_data {
-                    ui.label(name);
-                    ui.label(format!("{obs}"));
-                    ui.label(format!("{sim_count}"));
-                    ui.label(format!("{ratio:.2}"));
-
-                    let (cam_status, cam_color) = if *stale == 0 {
-                        ("Live".to_string(), egui::Color32::from_rgb(0, 200, 0))
-                    } else if *stale < 3 {
-                        (format!("Stale ({stale})"), egui::Color32::from_rgb(230, 200, 0))
+                    // Truncate long camera names
+                    let short_name = if name.len() > 10 {
+                        format!("{}…", &name[..9])
                     } else {
-                        ("Decaying".to_string(), egui::Color32::from_rgb(230, 130, 0))
+                        name.clone()
                     };
-                    ui.colored_label(cam_color, cam_status);
+                    ui.small(&short_name);
+                    ui.small(format!("{obs}"));
+                    ui.small(format!("{sim_count}"));
+
+                    let cam_color = if *stale == 0 {
+                        egui::Color32::from_rgb(0, 200, 0)
+                    } else if *stale < 3 {
+                        egui::Color32::from_rgb(230, 200, 0)
+                    } else {
+                        egui::Color32::from_rgb(230, 130, 0)
+                    };
+                    ui.colored_label(cam_color, format!("{ratio:.2}"));
                     ui.end_row();
                 }
             });
