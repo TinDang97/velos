@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Digital Twin
 status: completed
-stopped_at: Completed 19-03-PLAN.md
-last_updated: "2026-03-11T06:00:28.057Z"
+stopped_at: Phase 20 context gathered
+last_updated: "2026-03-11T06:06:16.213Z"
 last_activity: 2026-03-11 -- Phase 19 Plan 03 complete (building+terrain pipelines, render integration, visual verification)
 progress:
   total_phases: 5
@@ -114,6 +114,6 @@ Recent decisions affecting current work:
 
 ## Session Continuity
 
-Last session: 2026-03-11T05:56:44.789Z
-Stopped at: Completed 19-03-PLAN.md
-Resume file: None
+Last session: 2026-03-11T06:06:16.211Z
+Stopped at: Phase 20 context gathered
+Resume file: .planning/phases/20-real-time-calibration/20-CONTEXT.md
