@@ -40,7 +40,7 @@ Requirements for Digital Twin milestone. Each maps to roadmap phases.
 - [x] **R3D-03**: Agents render as 3D meshes (close), billboards (mid-range), dots (far) with GPU instancing per LOD tier
 - [x] **R3D-04**: User can toggle between 2D top-down and 3D perspective views
 - [x] **R3D-05**: Scene lighting follows simulation time-of-day (day/night cycle with directional sun + ambient)
-- [ ] **R3D-06**: OSM building footprints render as extruded 3D buildings with height from building:levels tag
+- [x] **R3D-06**: OSM building footprints render as extruded 3D buildings with height from building:levels tag
 - [x] **R3D-07**: Terrain renders from SRTM DEM heightmap data as ground surface mesh
 
 ## Future Requirements
@@ -100,7 +100,7 @@ Deferred to future release. Tracked but not in current roadmap.
 | R3D-03 | Phase 18 | Complete |
 | R3D-04 | Phase 18 | Complete |
 | R3D-05 | Phase 18 | Complete |
-| R3D-06 | Phase 19 | Pending |
+| R3D-06 | Phase 19 | Complete |
 | R3D-07 | Phase 19 | Complete |
 
 **Coverage:**

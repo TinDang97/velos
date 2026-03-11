@@ -25,12 +25,12 @@ See: .planning/PROJECT.md (updated 2026-03-09)
 
 ## Current Position
 
-Phase: 18 of 20 (3D Rendering Core) -- COMPLETE
-Plan: 4 of 4 in current phase (complete)
-Status: Phase 18 complete, ready for Phase 19
-Last activity: 2026-03-11 -- Phase 18 Plan 04 complete (view toggle wiring, orbit camera, render dispatch, visual verification)
+Phase: 19 of 20 (3D City Scene)
+Plan: 1 of 3 in current phase (complete)
+Status: Phase 19 Plan 01 complete, ready for Plan 02
+Last activity: 2026-03-11 -- Phase 19 Plan 01 complete (building footprint extraction, extrusion geometry, lit shader)
 
-Progress: [██████████] 100% (Phase 18)
+Progress: [███-------] 33% (Phase 19)
 
 ## Accumulated Context
 
@@ -39,6 +39,10 @@ Progress: [██████████] 100% (Phase 18)
 Decisions are logged in PROJECT.md Key Decisions table.
 Recent decisions affecting current work:
 
+- [19-01]: No instancing for buildings -- unique geometry in merged vertex/index buffer (single draw call)
+- [19-01]: Outward wall normals = (dy/len, 0, -dx/len) for CCW polygon in XZ plane
+- [19-01]: Only Way-type buildings for POC (multipolygon Relations deferred)
+- [19-01]: Base color #D4C5A9 beige with deterministic +/-5% centroid-based variation
 - [18-04]: Extracted app_input.rs and app_egui.rs from app.rs to stay under 700-line limit
 - [18-04]: Render dispatch renders target mode during transition (no cross-fade)
 - [18-04]: build_instances_3d maps 2D (x, y) to 3D (x, 0, y) with LOD classification from eye position
@@ -107,6 +111,6 @@ Recent decisions affecting current work:
 
 ## Session Continuity
 
-Last session: 2026-03-11T05:30:01.895Z
-Stopped at: Completed 19-02-PLAN.md
-Resume file: None
+Last session: 2026-03-11T05:33:43Z
+Stopped at: Completed 19-01-PLAN.md
+Resume file: .planning/phases/19-3d-city-scene/19-01-SUMMARY.md
