@@ -204,6 +204,11 @@ pub fn compute_calibration_factors(
     edge_to_zone: &HashMap<u32, Zone>,
     sim_time: f64,
 ) -> CalibrationOverlay {
+    // Collect all zones present in the network for cross-product with camera zones.
+    let mut all_zones: Vec<Zone> = edge_to_zone.values().copied().collect();
+    all_zones.sort_unstable_by_key(|z| *z as u8);
+    all_zones.dedup();
+
     // Accumulator for OD pair ratios: (sum_of_ratios, count)
     let mut od_accum: HashMap<(Zone, Zone), (f32, u32)> = HashMap::new();
 
@@ -235,16 +240,21 @@ pub fn compute_calibration_factors(
         zones_for_camera.sort_unstable_by_key(|z| *z as u8);
         zones_for_camera.dedup();
 
-        // Apply ratio to all OD pairs involving any of these zones
-        // (origin OR destination matches a covered zone)
-        for &zone in &zones_for_camera {
-            // For each zone, we affect all OD pairs where zone is origin or destination.
-            // To avoid needing the full OD matrix here, we just record zone-level ratios
-            // and build OD pairs from all zone combinations.
-            for &other_zone in &zones_for_camera {
-                let entry = od_accum.entry((zone, other_zone)).or_insert((0.0, 0));
+        // Apply ratio to all OD pairs where a camera zone is origin OR destination.
+        // This ensures inter-zone traffic flowing toward/from the camera area is
+        // scaled, not just intra-zone trips within the camera's covered zones.
+        for &cam_zone in &zones_for_camera {
+            for &other in &all_zones {
+                // cam_zone as destination: traffic flowing INTO camera area
+                let entry = od_accum.entry((other, cam_zone)).or_insert((0.0, 0));
                 entry.0 += ratio;
                 entry.1 += 1;
+                // cam_zone as origin: traffic flowing OUT of camera area
+                if other != cam_zone {
+                    let entry = od_accum.entry((cam_zone, other)).or_insert((0.0, 0));
+                    entry.0 += ratio;
+                    entry.1 += 1;
+                }
             }
         }
     }
@@ -561,6 +571,62 @@ mod tests {
         assert!(
             (factor - 1.15).abs() < 0.001,
             "delta within limit should be unchanged: expected 1.15, got {factor}"
+        );
+    }
+
+    #[test]
+    fn compute_factors_creates_cross_zone_pairs() {
+        // Camera covers edges in District1. Calibration should produce factors
+        // for ALL OD pairs involving District1, not just (D1, D1).
+        let mut registry = CameraRegistry::new();
+        registry.insert_camera("cam-1", vec![0, 1]);
+
+        let mut aggregator = DetectionAggregator::default();
+        // Ingest enough detections to exceed MIN_OBSERVED_THRESHOLD (10)
+        let event = crate::proto::velos::v2::DetectionEvent {
+            camera_id: 1,
+            vehicle_class: crate::proto::velos::v2::VehicleClass::Motorbike as i32,
+            count: 1,
+            speed_kmh: Some(36.0),
+            timestamp_ms: 100_000,
+        };
+        for _ in 0..20 {
+            aggregator.ingest(1, &event);
+        }
+
+        let mut simulated_counts = HashMap::new();
+        simulated_counts.insert(1u32, 10u32); // > MIN_SIMULATED_THRESHOLD
+
+        let mut camera_states = HashMap::new();
+
+        // Two zones in the network
+        let mut edge_to_zone = HashMap::new();
+        edge_to_zone.insert(0u32, Zone::District1);
+        edge_to_zone.insert(1u32, Zone::District1);
+        edge_to_zone.insert(100u32, Zone::District3); // Another zone in network
+
+        let overlay = compute_calibration_factors(
+            &registry,
+            &aggregator,
+            &simulated_counts,
+            &mut camera_states,
+            &edge_to_zone,
+            100.0,
+        );
+
+        // Should have cross-zone factors, not just (D1, D1)
+        assert!(
+            overlay.factors.contains_key(&(Zone::District3, Zone::District1)),
+            "should have (D3 -> D1) factor for traffic flowing into camera zone: {:?}",
+            overlay.factors.keys().collect::<Vec<_>>()
+        );
+        assert!(
+            overlay.factors.contains_key(&(Zone::District1, Zone::District3)),
+            "should have (D1 -> D3) factor for traffic flowing out of camera zone"
+        );
+        assert!(
+            overlay.factors.contains_key(&(Zone::District1, Zone::District1)),
+            "should have intra-zone (D1 -> D1) factor"
         );
     }
 
