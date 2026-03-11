@@ -138,10 +138,10 @@ fn draw_calibration_panel(ui: &mut egui::Ui, sim: &mut SimWorld, _grpc_addr: &st
     ui.separator();
     ui.heading("Calibration");
 
-    // --- Collect data from locked registry (minimal lock scope) ---
-    let camera_data: Vec<_> = {
-        let reg = sim.camera_registry.lock().unwrap();
-        reg.list()
+    // --- Collect data from registry (try_lock to avoid blocking render) ---
+    let camera_data: Vec<_> = match sim.camera_registry.try_lock() {
+        Ok(reg) => reg
+            .list()
             .iter()
             .map(|cam| {
                 let state = sim.calibration_states.get(&cam.id);
@@ -151,7 +151,8 @@ fn draw_calibration_panel(ui: &mut egui::Ui, sim: &mut SimWorld, _grpc_addr: &st
                 let stale = state.map(|s| s.consecutive_stale_windows).unwrap_or(0);
                 (cam.name.clone(), obs, sim_count, ratio, stale)
             })
-            .collect()
+            .collect(),
+        Err(_) => Vec::new(), // Skip this frame if lock contended
     };
 
     // --- 1. Header: status indicator + pause toggle ---
