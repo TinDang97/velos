@@ -409,7 +409,11 @@ impl GpuState {
                     );
                 }
                 ViewMode::Perspective3D => {
-                    self.renderer_3d.render_frame(&mut encoder, &view);
+                    self.renderer_3d.render_frame(
+                        &mut encoder,
+                        &view,
+                        self.orbit_camera.distance,
+                    );
                 }
             }
             self.queue.submit(std::iter::once(encoder.finish()));

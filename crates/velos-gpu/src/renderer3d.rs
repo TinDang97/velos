@@ -11,6 +11,7 @@ use bytemuck::{Pod, Zeroable};
 use glam::Vec3;
 use wgpu::util::DeviceExt;
 
+use crate::building_geometry::{generate_building_geometry, BuildingVertex};
 use crate::lighting::{compute_lighting, LightingUniform};
 use crate::mesh_loader::{MeshSet, Vertex3D};
 use crate::orbit_camera::{
@@ -20,8 +21,9 @@ use crate::road_surface::{
     generate_junction_surfaces, generate_lane_markings, generate_road_mesh, JunctionData,
     RoadSurfaceVertex,
 };
+use crate::terrain::TerrainVertex;
 use velos_core::components::VehicleType;
-use velos_net::RoadGraph;
+use velos_net::{BuildingFootprint, RoadGraph};
 
 /// Extended camera uniform buffer layout for 3D rendering (128 bytes).
 ///
@@ -116,6 +118,21 @@ pub struct Renderer3D {
     marking_vertex_count: u32,
     junction_vertex_buffer: Option<wgpu::Buffer>,
     junction_vertex_count: u32,
+    // Building geometry (Plan 19-01)
+    building_pipeline: wgpu::RenderPipeline,
+    building_vertex_buffer: Option<wgpu::Buffer>,
+    building_index_buffer: Option<wgpu::Buffer>,
+    building_index_count: u32,
+    /// Flat footprint LOD buffer (height near-zero) for far camera distances.
+    building_flat_vertex_buffer: Option<wgpu::Buffer>,
+    building_flat_index_buffer: Option<wgpu::Buffer>,
+    building_flat_index_count: u32,
+    // Terrain mesh (Plan 19-02)
+    terrain_pipeline: wgpu::RenderPipeline,
+    terrain_vertex_buffer: Option<wgpu::Buffer>,
+    terrain_index_buffer: Option<wgpu::Buffer>,
+    terrain_index_count: u32,
+    has_terrain: bool,
     // 3D agent rendering (Plan 03)
     mesh_pipeline: wgpu::RenderPipeline,
     billboard_pipeline: wgpu::RenderPipeline,
@@ -372,6 +389,143 @@ impl Renderer3D {
                 cache: None,
             });
 
+        // --- Building 3D pipeline ---
+        let building_shader =
+            device.create_shader_module(wgpu::include_wgsl!("../shaders/building_3d.wgsl"));
+
+        let building_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("building_3d_pipeline_layout"),
+                bind_group_layouts: &[&_agent_bind_group_layout],
+                push_constant_ranges: &[],
+            });
+
+        let building_vertex_layout = wgpu::VertexBufferLayout {
+            array_stride: std::mem::size_of::<BuildingVertex>() as u64,
+            step_mode: wgpu::VertexStepMode::Vertex,
+            attributes: &[
+                wgpu::VertexAttribute {
+                    offset: 0,
+                    shader_location: 0,
+                    format: wgpu::VertexFormat::Float32x3, // position
+                },
+                wgpu::VertexAttribute {
+                    offset: 12,
+                    shader_location: 1,
+                    format: wgpu::VertexFormat::Float32x3, // normal
+                },
+                wgpu::VertexAttribute {
+                    offset: 24,
+                    shader_location: 2,
+                    format: wgpu::VertexFormat::Float32x4, // color
+                },
+            ],
+        };
+
+        let building_pipeline =
+            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some("building_3d_pipeline"),
+                layout: Some(&building_pipeline_layout),
+                vertex: wgpu::VertexState {
+                    module: &building_shader,
+                    entry_point: Some("vs_main"),
+                    buffers: &[building_vertex_layout],
+                    compilation_options: Default::default(),
+                },
+                fragment: Some(wgpu::FragmentState {
+                    module: &building_shader,
+                    entry_point: Some("fs_main"),
+                    targets: &[Some(wgpu::ColorTargetState {
+                        format: surface_format,
+                        blend: Some(wgpu::BlendState::REPLACE),
+                        write_mask: wgpu::ColorWrites::ALL,
+                    })],
+                    compilation_options: Default::default(),
+                }),
+                primitive: wgpu::PrimitiveState {
+                    topology: wgpu::PrimitiveTopology::TriangleList,
+                    strip_index_format: None,
+                    front_face: wgpu::FrontFace::Ccw,
+                    cull_mode: Some(wgpu::Face::Back),
+                    ..Default::default()
+                },
+                depth_stencil: Some(depth_stencil_state.clone()),
+                multisample: wgpu::MultisampleState::default(),
+                multiview: None,
+                cache: None,
+            });
+
+        // --- Terrain pipeline ---
+        let terrain_shader =
+            device.create_shader_module(wgpu::include_wgsl!("../shaders/terrain.wgsl"));
+
+        let terrain_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("terrain_pipeline_layout"),
+                bind_group_layouts: &[&camera_bind_group_layout],
+                push_constant_ranges: &[],
+            });
+
+        let terrain_vertex_layout = wgpu::VertexBufferLayout {
+            array_stride: std::mem::size_of::<TerrainVertex>() as u64,
+            step_mode: wgpu::VertexStepMode::Vertex,
+            attributes: &[
+                wgpu::VertexAttribute {
+                    offset: 0,
+                    shader_location: 0,
+                    format: wgpu::VertexFormat::Float32x3, // position
+                },
+                wgpu::VertexAttribute {
+                    offset: 12,
+                    shader_location: 1,
+                    format: wgpu::VertexFormat::Float32x4, // color
+                },
+            ],
+        };
+
+        let terrain_pipeline =
+            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some("terrain_pipeline"),
+                layout: Some(&terrain_pipeline_layout),
+                vertex: wgpu::VertexState {
+                    module: &terrain_shader,
+                    entry_point: Some("vs_main"),
+                    buffers: &[terrain_vertex_layout],
+                    compilation_options: Default::default(),
+                },
+                fragment: Some(wgpu::FragmentState {
+                    module: &terrain_shader,
+                    entry_point: Some("fs_main"),
+                    targets: &[Some(wgpu::ColorTargetState {
+                        format: surface_format,
+                        blend: Some(wgpu::BlendState::REPLACE),
+                        write_mask: wgpu::ColorWrites::ALL,
+                    })],
+                    compilation_options: Default::default(),
+                }),
+                primitive: wgpu::PrimitiveState {
+                    topology: wgpu::PrimitiveTopology::TriangleList,
+                    strip_index_format: None,
+                    front_face: wgpu::FrontFace::Ccw,
+                    cull_mode: None,
+                    ..Default::default()
+                },
+                depth_stencil: Some(wgpu::DepthStencilState {
+                    format: wgpu::TextureFormat::Depth32Float,
+                    depth_write_enabled: true,
+                    depth_compare: wgpu::CompareFunction::GreaterEqual,
+                    stencil: wgpu::StencilState::default(),
+                    bias: wgpu::DepthBiasState {
+                        constant: -2,
+                        slope_scale: -2.0,
+                        clamp: 0.0,
+                    },
+                }),
+                multisample: wgpu::MultisampleState::default(),
+                multiview: None,
+                cache: None,
+            });
+
         // --- Mesh 3D pipeline ---
         let mesh_shader =
             device.create_shader_module(wgpu::include_wgsl!("../shaders/mesh_3d.wgsl"));
@@ -548,6 +702,18 @@ impl Renderer3D {
             marking_vertex_count: 0,
             junction_vertex_buffer: None,
             junction_vertex_count: 0,
+            building_pipeline,
+            building_vertex_buffer: None,
+            building_index_buffer: None,
+            building_index_count: 0,
+            building_flat_vertex_buffer: None,
+            building_flat_index_buffer: None,
+            building_flat_index_count: 0,
+            terrain_pipeline,
+            terrain_vertex_buffer: None,
+            terrain_index_buffer: None,
+            terrain_index_count: 0,
+            has_terrain: false,
             mesh_pipeline,
             billboard_pipeline,
             mesh_set,
@@ -637,6 +803,90 @@ impl Renderer3D {
         }
     }
 
+    /// Upload building geometry from footprints.
+    ///
+    /// Generates full extrusion (close LOD) and flat footprint (far LOD)
+    /// buffers for distance-based LOD selection.
+    pub fn upload_building_geometry(
+        &mut self,
+        device: &wgpu::Device,
+        buildings: &[BuildingFootprint],
+    ) {
+        // Full extrusion (close LOD)
+        let (verts, indices) = generate_building_geometry(buildings);
+        if !verts.is_empty() {
+            self.building_vertex_buffer =
+                Some(device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some("building_vertices"),
+                    contents: bytemuck::cast_slice(&verts),
+                    usage: wgpu::BufferUsages::VERTEX,
+                }));
+            self.building_index_buffer =
+                Some(device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some("building_indices"),
+                    contents: bytemuck::cast_slice(&indices),
+                    usage: wgpu::BufferUsages::INDEX,
+                }));
+            self.building_index_count = indices.len() as u32;
+            log::info!(
+                "Uploaded building geometry: {} vertices, {} indices",
+                verts.len(),
+                indices.len()
+            );
+        }
+
+        // Flat footprint (far LOD): override height to near-zero
+        let flat_buildings: Vec<BuildingFootprint> = buildings
+            .iter()
+            .map(|b| BuildingFootprint {
+                polygon: b.polygon.clone(),
+                height_m: 0.01,
+            })
+            .collect();
+        let (flat_verts, flat_indices) = generate_building_geometry(&flat_buildings);
+        if !flat_verts.is_empty() {
+            self.building_flat_vertex_buffer =
+                Some(device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some("building_flat_vertices"),
+                    contents: bytemuck::cast_slice(&flat_verts),
+                    usage: wgpu::BufferUsages::VERTEX,
+                }));
+            self.building_flat_index_buffer =
+                Some(device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some("building_flat_indices"),
+                    contents: bytemuck::cast_slice(&flat_indices),
+                    usage: wgpu::BufferUsages::INDEX,
+                }));
+            self.building_flat_index_count = flat_indices.len() as u32;
+        }
+    }
+
+    /// Upload terrain geometry from pre-generated mesh data.
+    pub fn upload_terrain_geometry(
+        &mut self,
+        device: &wgpu::Device,
+        vertices: &[TerrainVertex],
+        indices: &[u32],
+    ) {
+        if vertices.is_empty() {
+            return;
+        }
+        self.terrain_vertex_buffer =
+            Some(device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("terrain_vertices"),
+                contents: bytemuck::cast_slice(vertices),
+                usage: wgpu::BufferUsages::VERTEX,
+            }));
+        self.terrain_index_buffer =
+            Some(device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("terrain_indices"),
+                contents: bytemuck::cast_slice(indices),
+                usage: wgpu::BufferUsages::INDEX,
+            }));
+        self.terrain_index_count = indices.len() as u32;
+        self.has_terrain = true;
+    }
+
     /// Render the ground plane with depth testing.
     ///
     /// Clears both color (dark background) and depth buffers, then draws the
@@ -670,10 +920,24 @@ impl Renderer3D {
             ..Default::default()
         });
 
-        pass.set_pipeline(&self.ground_plane_pipeline);
-        pass.set_bind_group(0, &self.ground_bind_group, &[]);
-        pass.set_vertex_buffer(0, self.ground_plane_vertex_buffer.slice(..));
-        pass.draw(0..self.ground_plane_vertex_count, 0..1);
+        if self.has_terrain {
+            // Render terrain mesh instead of flat ground plane
+            if let (Some(vb), Some(ib)) =
+                (&self.terrain_vertex_buffer, &self.terrain_index_buffer)
+            {
+                pass.set_pipeline(&self.terrain_pipeline);
+                pass.set_bind_group(0, &self.ground_bind_group, &[]);
+                pass.set_vertex_buffer(0, vb.slice(..));
+                pass.set_index_buffer(ib.slice(..), wgpu::IndexFormat::Uint32);
+                pass.draw_indexed(0..self.terrain_index_count, 0, 0..1);
+            }
+        } else {
+            // Fallback: flat ground plane
+            pass.set_pipeline(&self.ground_plane_pipeline);
+            pass.set_bind_group(0, &self.ground_bind_group, &[]);
+            pass.set_vertex_buffer(0, self.ground_plane_vertex_buffer.slice(..));
+            pass.draw(0..self.ground_plane_vertex_count, 0..1);
+        }
     }
 
     /// Upload road geometry (surfaces, markings, junctions) from a RoadGraph.
@@ -751,6 +1015,38 @@ impl Renderer3D {
         }
     }
 
+    /// Render buildings with distance-based LOD selection.
+    ///
+    /// LOD tiers:
+    /// - < 500m: full extrusion (walls + roof)
+    /// - 500-1500m: flat footprint (near-zero height)
+    /// - > 1500m: culled (not drawn)
+    fn render_buildings(&self, pass: &mut wgpu::RenderPass<'_>, camera_focus_distance: f32) {
+        let (vbuf, ibuf, count) = if camera_focus_distance < 500.0 {
+            (
+                &self.building_vertex_buffer,
+                &self.building_index_buffer,
+                self.building_index_count,
+            )
+        } else if camera_focus_distance < 1500.0 {
+            (
+                &self.building_flat_vertex_buffer,
+                &self.building_flat_index_buffer,
+                self.building_flat_index_count,
+            )
+        } else {
+            return; // culled at very far distance
+        };
+
+        if let (Some(vb), Some(ib)) = (vbuf, ibuf) {
+            pass.set_pipeline(&self.building_pipeline);
+            pass.set_bind_group(0, &self.agent_bind_group, &[]);
+            pass.set_vertex_buffer(0, vb.slice(..));
+            pass.set_index_buffer(ib.slice(..), wgpu::IndexFormat::Uint32);
+            pass.draw_indexed(0..count, 0, 0..1);
+        }
+    }
+
     /// Render 3D mesh agents (nearest tier).
     fn render_meshes(&self, pass: &mut wgpu::RenderPass<'_>) {
         pass.set_pipeline(&self.mesh_pipeline);
@@ -778,12 +1074,19 @@ impl Renderer3D {
         }
     }
 
-    /// Render a full 3D frame: ground plane, road surfaces, 3D meshes, billboards.
-    pub fn render_frame(&self, encoder: &mut wgpu::CommandEncoder, view: &wgpu::TextureView) {
-        // Ground plane clears color + depth
+    /// Render a full 3D frame: terrain/ground, roads, buildings, 3D meshes, billboards.
+    ///
+    /// `camera_focus_distance`: orbit camera distance for building LOD selection.
+    pub fn render_frame(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        view: &wgpu::TextureView,
+        camera_focus_distance: f32,
+    ) {
+        // Ground/terrain clears color + depth
         self.render_ground(encoder, view);
 
-        // Road geometry + agent rendering in a second pass (loads existing color/depth)
+        // Scene pass: roads -> buildings -> meshes -> billboards
         {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("scene_pass"),
@@ -808,6 +1111,7 @@ impl Renderer3D {
             });
 
             self.render_roads(&mut pass);
+            self.render_buildings(&mut pass, camera_focus_distance);
             self.render_meshes(&mut pass);
             self.render_billboards(&mut pass);
         }
