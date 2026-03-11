@@ -58,6 +58,11 @@ pub(crate) fn build_edge_to_zone(
     mapping
 }
 
+/// Polling interval for window-change detection in sim-seconds.
+/// Avoids per-frame mutex acquisition on registry + aggregator.
+/// 2 seconds is responsive enough for real-time calibration (vs old 300s).
+const CALIBRATION_POLL_INTERVAL_SECS: f64 = 2.0;
+
 /// Minimum cooldown between calibration recalibrations in sim-seconds.
 /// Prevents thrashing when multiple windows complete in rapid succession.
 const CALIBRATION_COOLDOWN_SECS: f64 = 30.0;
@@ -114,6 +119,13 @@ impl SimWorld {
         if self.calibration_paused {
             return;
         }
+
+        // 1.5. Poll guard: only check for window changes every N sim-seconds
+        // to avoid per-frame mutex acquisition on registry + aggregator.
+        if self.sim_time - self.last_calibration_poll_time < CALIBRATION_POLL_INTERVAL_SECS {
+            return;
+        }
+        self.last_calibration_poll_time = self.sim_time;
 
         // 2. Lock registry, get camera list, early return if empty
         let registry = self.camera_registry.lock().unwrap();
@@ -460,8 +472,10 @@ mod tests {
             },
         );
 
-        // Call step_calibration multiple times to accumulate staleness
-        for _ in 0..4 {
+        // Call step_calibration multiple times to accumulate staleness.
+        // Advance sim_time each iteration to pass the poll interval guard.
+        for i in 0..4 {
+            sim.sim_time = 100.0 + (i as f64 + 1.0) * CALIBRATION_POLL_INTERVAL_SECS;
             sim.step_calibration();
         }
 
@@ -509,5 +523,34 @@ mod tests {
                 factor
             );
         }
+    }
+
+    #[test]
+    fn step_calibration_skips_within_poll_interval() {
+        let mut sim = make_calibration_sim();
+        sim.sim_time = 100.0;
+        sim.last_calibration_time = 0.0;
+
+        setup_camera_with_detection(&mut sim, "cam-1", vec![0], 100_000, 50);
+        sim.edge_to_zone.insert(0, Zone::District1);
+
+        // First call triggers (poll interval elapsed: 100 - 0 >= 2)
+        sim.step_calibration();
+        let overlay = sim.calibration_store.current();
+        assert!(!overlay.factors.is_empty(), "first call should trigger");
+
+        // Reset overlay to detect if second call triggers
+        sim.calibration_store.swap(CalibrationOverlay {
+            factors: HashMap::new(),
+            timestamp_sim_seconds: 0.0,
+        });
+
+        // Second call at same sim_time should skip (poll guard)
+        sim.step_calibration();
+        let overlay = sim.calibration_store.current();
+        assert!(
+            overlay.factors.is_empty(),
+            "second call within poll interval should skip"
+        );
     }
 }

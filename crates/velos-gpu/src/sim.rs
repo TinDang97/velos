@@ -220,6 +220,9 @@ pub struct SimWorld {
     pub(crate) calibration_paused: bool,
     /// Per-camera last processed aggregation window start_ms for change detection.
     pub(crate) last_processed_windows: HashMap<u32, i64>,
+    /// Last sim time when calibration polling checked for new windows.
+    /// Prevents per-frame mutex acquisition; polls every 2 sim-seconds.
+    pub(crate) last_calibration_poll_time: f64,
 }
 
 impl SimWorld {
@@ -344,6 +347,7 @@ impl SimWorld {
             show_calibration_panel: false,
             calibration_paused: false,
             last_processed_windows: HashMap::new(),
+            last_calibration_poll_time: 0.0,
         };
 
         // Initialize reroute subsystem (builds CCH, prediction service).
@@ -430,6 +434,7 @@ impl SimWorld {
             show_calibration_panel: false,
             calibration_paused: false,
             last_processed_windows: HashMap::new(),
+            last_calibration_poll_time: 0.0,
         }
     }
 
@@ -486,6 +491,7 @@ impl SimWorld {
         self.reroute = RerouteState::new();
         self.calibration_paused = false;
         self.last_processed_windows.clear();
+        self.last_calibration_poll_time = 0.0;
         // perception_buffers kept (GPU buffers are reusable)
         for (_, ctrl) in &mut self.signal_controllers {
             ctrl.reset();
