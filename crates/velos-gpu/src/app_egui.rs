@@ -134,7 +134,7 @@ fn draw_vehicle_legend(ui: &mut egui::Ui, sim: &SimWorld) {
     }
 }
 
-fn draw_calibration_panel(ui: &mut egui::Ui, sim: &mut SimWorld, grpc_addr: &str) {
+fn draw_calibration_panel(ui: &mut egui::Ui, sim: &mut SimWorld, _grpc_addr: &str) {
     ui.separator();
     ui.heading("Calibration");
 
@@ -184,10 +184,9 @@ fn draw_calibration_panel(ui: &mut egui::Ui, sim: &mut SimWorld, grpc_addr: &str
     let secs_since = (sim.sim_time - sim.last_calibration_time).max(0.0) as u64;
 
     ui.small(format!(
-        "Active: {} | Avg: {:.2} | {grpc_addr}",
-        active_count, mean_ratio
+        "Active: {} | Avg: {:.2} | Cal: {}s",
+        active_count, mean_ratio, secs_since
     ));
-    ui.small(format!("Last cal: {}s ago", secs_since));
 
     // --- 3. Per-camera grid (compact) ---
     if !camera_data.is_empty() {
@@ -204,9 +203,8 @@ fn draw_calibration_panel(ui: &mut egui::Ui, sim: &mut SimWorld, grpc_addr: &str
                 ui.end_row();
 
                 for (name, obs, sim_count, ratio, stale) in &camera_data {
-                    // Truncate long camera names
-                    let short_name = if name.len() > 10 {
-                        format!("{}…", &name[..9])
+                    let short_name = if name.len() > 8 {
+                        format!("{}…", &name[..7])
                     } else {
                         name.clone()
                     };
