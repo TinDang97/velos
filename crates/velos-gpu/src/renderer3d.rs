@@ -939,4 +939,22 @@ mod tests {
             Err(e) => panic!("road_surface.wgsl parse failed: {e}"),
         }
     }
+
+    #[test]
+    fn test_terrain_wgsl_naga_validates() {
+        let source = include_str!("../shaders/terrain.wgsl");
+        let result = naga::front::wgsl::parse_str(source);
+        match result {
+            Ok(module) => {
+                let mut validator = naga::valid::Validator::new(
+                    naga::valid::ValidationFlags::all(),
+                    naga::valid::Capabilities::empty(),
+                );
+                validator
+                    .validate(&module)
+                    .expect("terrain.wgsl validation failed");
+            }
+            Err(e) => panic!("terrain.wgsl parse failed: {e}"),
+        }
+    }
 }
