@@ -176,7 +176,7 @@ impl SimWorld {
         use velos_demand::SpawnVehicleType;
 
         // Collect camera edges + detection rates (hold locks briefly)
-        let cam_edges: Vec<(Vec<u32>, u32)> = {
+        let cam_edges: Vec<(Vec<u32>, u32, u32)> = {
             let registry = match self.camera_registry.try_lock() {
                 Ok(r) => r,
                 Err(_) => return,
@@ -193,7 +193,7 @@ impl SimWorld {
                         .latest_window(cam.id)
                         .map(|w| w.counts.values().sum())
                         .unwrap_or(0);
-                    (cam.covered_edges.clone(), obs)
+                    (cam.covered_edges.clone(), obs, cam.id)
                 })
                 .collect()
         };
@@ -201,9 +201,15 @@ impl SimWorld {
         let time_fraction = dt / 3600.0;
         let mut spawned = 0usize;
 
-        for (edges, obs_per_window) in &cam_edges {
+        for (edges, obs_per_window, cam_id) in &cam_edges {
             if edges.is_empty() || *obs_per_window == 0 {
                 continue;
+            }
+            // Skip stale cameras — no fresh detections for 3+ windows
+            if let Some(state) = self.calibration_states.get(cam_id) {
+                if state.consecutive_stale_windows >= 3 {
+                    continue;
+                }
             }
             // Scale observed count to per-tick spawn rate
             // Window is ~15min (900s), so hourly rate ≈ obs * 4
