@@ -50,6 +50,7 @@ gltf = "1.4"
 [dev-dependencies]
 criterion = { version = "0.5", features = ["html_reports"] }
 naga = { version = "27", features = ["wgsl-in"] }
+tempfile = "3"
 
 [[bench]]
 name = "dispatch"

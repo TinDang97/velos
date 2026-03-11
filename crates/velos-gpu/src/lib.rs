@@ -12,6 +12,7 @@ pub mod lod;
 pub mod mesh_loader;
 pub mod renderer3d;
 pub mod road_surface;
+pub mod terrain;
 pub mod compute;
 mod compute_wave_front;
 pub mod device;
