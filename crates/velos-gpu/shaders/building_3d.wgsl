@@ -58,9 +58,12 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     // Sun direction points toward the sun; negate for light direction toward surface
     let L = normalize(-lighting.sun_direction);
 
-    // Diffuse shading (Lambert)
-    let n_dot_l = max(dot(N, L), 0.0);
-    let diffuse = lighting.sun_color * n_dot_l;
+    // Half-Lambert diffuse: wraps lighting for softer architectural shading.
+    // Maps dot product from [-1,1] to [0.25,1] so shadow sides still receive
+    // some light, mimicking indirect sky illumination on building walls.
+    let raw_dot = dot(N, L);
+    let n_dot_l = raw_dot * 0.5 + 0.5;
+    let diffuse = lighting.sun_color * n_dot_l * 0.7;
 
     // Ambient
     let ambient = lighting.ambient_color * lighting.ambient_intensity;

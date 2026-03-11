@@ -446,7 +446,9 @@ impl Renderer3D {
                     topology: wgpu::PrimitiveTopology::TriangleList,
                     strip_index_format: None,
                     front_face: wgpu::FrontFace::Ccw,
-                    cull_mode: Some(wgpu::Face::Back),
+                    // No back-face culling: OSM building polygons can have
+                    // inconsistent winding even after ensure_ccw normalization
+                    cull_mode: None,
                     ..Default::default()
                 },
                 depth_stencil: Some(depth_stencil_state.clone()),

@@ -160,14 +160,15 @@ pub fn generate_building_geometry(
                 color,
             });
 
-            // Two triangles per quad: (0,1,2) and (0,2,3)
+            // Two triangles per quad, CCW when viewed from outside:
+            // (0,2,1) and (0,3,2) — reversed so front face is outward
             indices.push(wall_base);
-            indices.push(wall_base + 1);
             indices.push(wall_base + 2);
+            indices.push(wall_base + 1);
 
             indices.push(wall_base);
-            indices.push(wall_base + 2);
             indices.push(wall_base + 3);
+            indices.push(wall_base + 2);
         }
     }
 
