@@ -106,7 +106,10 @@ impl CameraRegistry {
         let (cam_x, cam_y) = projection.project(request.lat, request.lon);
         let cam_pos = [cam_x, cam_y];
 
-        let heading_rad = (request.heading_deg as f64).to_radians();
+        // Convert compass heading (0=north, clockwise) to math convention
+        // (0=east, CCW) to match atan2 used in edges_in_fov.
+        let heading_rad =
+            std::f64::consts::FRAC_PI_2 - (request.heading_deg as f64).to_radians();
         let half_angle_rad = (request.fov_deg as f64 / 2.0).to_radians();
         let range = request.range_m as f64;
 
@@ -495,5 +498,40 @@ mod tests {
         req.fov_deg = 60.0;
         req.range_m = MAX_RANGE_M;
         assert!(validate_camera_params(&req).is_ok());
+    }
+
+    #[test]
+    fn register_converts_compass_heading_to_math_convention() {
+        // Camera heading_deg=90 (east in compass) should select edges to the east.
+        // In math convention: east = 0 rad = PI/2 - 90deg_to_rad = PI/2 - PI/2 = 0.
+        // Edge at (50, 0) = due east from origin in projected coords.
+        // Edge at (0, 50) = due north — should NOT be selected with heading=east.
+        let tree = make_test_tree(vec![
+            seg_at(1, 50.0, 0.0), // east of camera
+            seg_at(2, 0.0, 50.0), // north of camera
+        ]);
+        let proj = EquirectangularProjection::new(0.0, 0.0);
+        let mut registry = CameraRegistry::new();
+
+        let req = RegisterCameraRequest {
+            lat: 0.0,
+            lon: 0.0,
+            heading_deg: 90.0, // east in compass convention
+            fov_deg: 60.0,     // 30deg half-angle
+            range_m: 100.0,
+            name: "east-cam".into(),
+        };
+        let cam = registry.register(&req, &tree, &proj);
+
+        assert!(
+            cam.covered_edges.contains(&1),
+            "edge due east should be covered when heading=90 (east): {:?}",
+            cam.covered_edges
+        );
+        assert!(
+            !cam.covered_edges.contains(&2),
+            "edge due north should NOT be covered when heading=90 (east): {:?}",
+            cam.covered_edges
+        );
     }
 }
