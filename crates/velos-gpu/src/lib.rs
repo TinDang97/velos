@@ -5,6 +5,7 @@ pub mod app;
 mod app_egui;
 pub mod app_input;
 pub mod buffers;
+pub mod building_geometry;
 pub mod camera;
 pub mod orbit_camera;
 pub mod lighting;

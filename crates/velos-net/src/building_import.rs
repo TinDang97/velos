@@ -40,20 +40,19 @@ fn compute_building_height(tags: &HashMap<&str, &str>) -> f64 {
             .trim_end_matches(" m")
             .trim_end_matches('m')
             .trim();
-        if let Ok(h) = cleaned.parse::<f64>() {
-            if h > 0.0 {
-                return h;
-            }
+        if let Ok(h) = cleaned.parse::<f64>()
+            && h > 0.0
+        {
+            return h;
         }
     }
 
     // Check `building:levels` tag
-    if let Some(levels_str) = tags.get("building:levels") {
-        if let Ok(levels) = levels_str.trim().parse::<f64>() {
-            if levels > 0.0 {
-                return levels * 3.5;
-            }
-        }
+    if let Some(levels_str) = tags.get("building:levels")
+        && let Ok(levels) = levels_str.trim().parse::<f64>()
+        && levels > 0.0
+    {
+        return levels * 3.5;
     }
 
     // Default: 3 floors * 3.5m
@@ -64,7 +63,7 @@ fn compute_building_height(tags: &HashMap<&str, &str>) -> f64 {
 ///
 /// Uses the shoelace formula to compute signed area. If area is negative
 /// (clockwise winding), reverses the vertex order.
-fn ensure_ccw(polygon: &mut Vec<[f64; 2]>) {
+fn ensure_ccw(polygon: &mut [[f64; 2]]) {
     let signed_area = signed_area_2x(polygon);
     if signed_area < 0.0 {
         polygon.reverse();
