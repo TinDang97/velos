@@ -134,8 +134,14 @@ pub fn compute_camera_ratio(
     }
 
     if simulated <= MIN_SIMULATED_THRESHOLD {
-        // Not enough simulated data to calibrate; keep previous ratio.
-        return state.previous_ratio;
+        // High observed but near-zero simulated: area is underserved.
+        // Use max ratio to bootstrap traffic into this area, then EMA
+        // will converge once enough agents arrive.
+        let raw_ratio = RATIO_CLAMP_HIGH;
+        let smoothed = EMA_ALPHA * raw_ratio + (1.0 - EMA_ALPHA) * state.previous_ratio;
+        let clamped = smoothed.clamp(RATIO_CLAMP_LOW, RATIO_CLAMP_HIGH);
+        state.previous_ratio = clamped;
+        return clamped;
     }
 
     let raw_ratio = observed as f32 / simulated as f32;
@@ -362,21 +368,33 @@ mod tests {
     }
 
     #[test]
-    fn simulated_zero_defaults_ratio_to_1_0() {
+    fn simulated_zero_bootstraps_with_max_ratio() {
+        // observed=100 (above threshold), simulated=0 (below threshold)
+        // Should bootstrap: EMA toward RATIO_CLAMP_HIGH (2.0)
+        // EMA: 0.3 * 2.0 + 0.7 * 1.0 = 1.30
         let mut state = CameraCalibrationState::default();
         let ratio = compute_camera_ratio(100, 0, &mut state);
-        assert_eq!(ratio, 1.0);
+        let expected = 0.3 * 2.0 + 0.7 * 1.0;
+        assert!(
+            (ratio - expected).abs() < 0.001,
+            "should bootstrap toward max: expected {expected}, got {ratio}"
+        );
     }
 
     #[test]
-    fn simulated_below_threshold_defaults_ratio_to_previous() {
+    fn simulated_below_threshold_bootstraps_from_previous() {
+        // previous=1.3, observed=100, simulated=5 (at threshold, <=5)
+        // EMA: 0.3 * 2.0 + 0.7 * 1.3 = 0.6 + 0.91 = 1.51
         let mut state = CameraCalibrationState {
             previous_ratio: 1.3,
             ..Default::default()
         };
-        // simulated=5 is at threshold (<=5), should skip
         let ratio = compute_camera_ratio(100, 5, &mut state);
-        assert_eq!(ratio, 1.3);
+        let expected = 0.3 * 2.0 + 0.7 * 1.3;
+        assert!(
+            (ratio - expected).abs() < 0.001,
+            "should bootstrap from previous: expected {expected}, got {ratio}"
+        );
     }
 
     #[test]
