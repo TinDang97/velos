@@ -26,22 +26,20 @@ impl SimWorld {
     const SPAWN_CAP_PER_TICK: usize = 50;
 
     pub(crate) fn spawn_agents(&mut self, dt: f64) {
-        let sim_hour = self.sim_time / 3600.0;
-
-        // Use calibrated spawns when calibration overlay has factors
-        let overlay = self.calibration_store.current();
-        let requests = if self.detection_only_spawning && overlay.factors.is_empty() {
-            // Detection-only mode with no calibration data yet: skip spawning
-            Vec::new()
-        } else if overlay.factors.is_empty() {
-            self.spawner.generate_spawns(sim_hour, dt)
+        if self.detection_only_spawning {
+            self.spawn_detection_only_agents(dt);
         } else {
-            self.spawner.generate_spawns_calibrated(sim_hour, dt, &overlay.factors)
-        };
-        drop(overlay);
-
-        for req in requests.iter().take(Self::SPAWN_CAP_PER_TICK) {
-            self.spawn_single_agent(req);
+            let sim_hour = self.sim_time / 3600.0;
+            let overlay = self.calibration_store.current();
+            let requests = if overlay.factors.is_empty() {
+                self.spawner.generate_spawns(sim_hour, dt)
+            } else {
+                self.spawner.generate_spawns_calibrated(sim_hour, dt, &overlay.factors)
+            };
+            drop(overlay);
+            for req in requests.iter().take(Self::SPAWN_CAP_PER_TICK) {
+                self.spawn_single_agent(req);
+            }
         }
 
         // GTFS bus spawning (time-gated by trip departure schedule).
@@ -170,6 +168,221 @@ impl SimWorld {
             "Spawned GTFS bus: trip={}, route={}, stops={}",
             req.trip_id, req.route_id, req.stop_indices.len()
         );
+    }
+
+    /// Detection-only spawning: spawn agents directly on camera-covered edges
+    /// based on detection counts, not OD matrix.
+    fn spawn_detection_only_agents(&mut self, dt: f64) {
+        use velos_demand::SpawnVehicleType;
+
+        // Collect camera edges + detection rates (hold locks briefly)
+        let cam_edges: Vec<(Vec<u32>, u32)> = {
+            let registry = match self.camera_registry.try_lock() {
+                Ok(r) => r,
+                Err(_) => return,
+            };
+            let aggregator = match self.aggregator.try_lock() {
+                Ok(a) => a,
+                Err(_) => return,
+            };
+            registry
+                .list()
+                .iter()
+                .map(|cam| {
+                    let obs: u32 = aggregator
+                        .latest_window(cam.id)
+                        .map(|w| w.counts.values().sum())
+                        .unwrap_or(0);
+                    (cam.covered_edges.clone(), obs)
+                })
+                .collect()
+        };
+
+        let time_fraction = dt / 3600.0;
+        let mut spawned = 0usize;
+
+        for (edges, obs_per_window) in &cam_edges {
+            if edges.is_empty() || *obs_per_window == 0 {
+                continue;
+            }
+            // Scale observed count to per-tick spawn rate
+            // Window is ~15min (900s), so hourly rate ≈ obs * 4
+            let hourly_rate = *obs_per_window as f64 * 4.0;
+            let expected = hourly_rate * time_fraction;
+            let whole = expected.floor() as u32;
+            let frac = expected - expected.floor();
+            let mut count = whole;
+            if frac > 0.0 && self.rng.gen_range(0.0..1.0) < frac {
+                count += 1;
+            }
+
+            for _ in 0..count {
+                if spawned >= Self::SPAWN_CAP_PER_TICK {
+                    return;
+                }
+                // Pick random covered edge and extract node info
+                let edge_id = edges[self.rng.gen_range(0..edges.len())];
+                let edge_idx = petgraph::graph::EdgeIndex::new(edge_id as usize);
+                let src = match self.road_graph.inner().edge_endpoints(edge_idx) {
+                    Some((s, _)) => s,
+                    None => continue,
+                };
+                let origin_zone = self
+                    .edge_to_zone
+                    .get(&edge_id)
+                    .copied()
+                    .unwrap_or(velos_demand::Zone::District1);
+
+                // Pick vehicle type (80% motorbike for HCMC)
+                let vtype_roll: f32 = self.rng.r#gen();
+                let vtype = if vtype_roll < 0.80 {
+                    SpawnVehicleType::Motorbike
+                } else if vtype_roll < 0.92 {
+                    SpawnVehicleType::Car
+                } else {
+                    SpawnVehicleType::Bicycle
+                };
+                let profile = velos_demand::assign_profile(
+                    vtype,
+                    self.spawner.profile_dist(),
+                    &mut self.rng,
+                );
+
+                let req = velos_demand::SpawnRequest {
+                    origin: origin_zone,
+                    destination: origin_zone, // will be overridden by random dest in spawn_agent_at_node
+                    vehicle_type: vtype,
+                    profile,
+                };
+                self.spawn_agent_at_node(src, &req);
+                spawned += 1;
+            }
+        }
+    }
+
+    /// Spawn an agent at a specific node (for detection-only mode).
+    fn spawn_agent_at_node(
+        &mut self,
+        from_node: NodeIndex,
+        req: &velos_demand::SpawnRequest,
+    ) {
+        let dest_pos = self
+            .zone_centroids
+            .get(&req.destination)
+            .copied()
+            .unwrap_or([0.0, 0.0]);
+        let dest_node = self.random_node_near(dest_pos, 1500.0);
+
+        let route_result = velos_net::find_route(&self.road_graph, from_node, dest_node);
+        let path = match route_result {
+            Ok((p, _)) if p.len() >= 2 => p,
+            _ => return,
+        };
+
+        let g = self.road_graph.inner();
+        let edge_idx = g
+            .find_edge(path[0], path[1])
+            .map(|e| e.index() as u32)
+            .unwrap_or(0);
+        let start_pos = g[path[0]].pos;
+        let next_pos = g[path[1]].pos;
+        let heading = (next_pos[1] - start_pos[1]).atan2(next_pos[0] - start_pos[0]);
+
+        let vtype = match req.vehicle_type {
+            SpawnVehicleType::Motorbike => VehicleType::Motorbike,
+            SpawnVehicleType::Car => VehicleType::Car,
+            SpawnVehicleType::Bus => VehicleType::Bus,
+            SpawnVehicleType::Bicycle => VehicleType::Bicycle,
+            SpawnVehicleType::Truck => VehicleType::Truck,
+            SpawnVehicleType::Emergency => VehicleType::Emergency,
+            SpawnVehicleType::Pedestrian => VehicleType::Pedestrian,
+        };
+
+        let vehicle_type_for_params = match vtype {
+            VehicleType::Motorbike => velos_vehicle::types::VehicleType::Motorbike,
+            VehicleType::Car => velos_vehicle::types::VehicleType::Car,
+            VehicleType::Bus => velos_vehicle::types::VehicleType::Bus,
+            VehicleType::Bicycle => velos_vehicle::types::VehicleType::Bicycle,
+            VehicleType::Truck => velos_vehicle::types::VehicleType::Truck,
+            VehicleType::Emergency => velos_vehicle::types::VehicleType::Emergency,
+            VehicleType::Pedestrian => velos_vehicle::types::VehicleType::Pedestrian,
+        };
+        let idm_params = default_idm_params(vehicle_type_for_params);
+        let cf_model = match vtype {
+            VehicleType::Motorbike | VehicleType::Bicycle => Some(CarFollowingModel::Idm),
+            VehicleType::Car | VehicleType::Bus | VehicleType::Truck | VehicleType::Emergency => {
+                if self.rng.gen_ratio(3, 10) {
+                    Some(CarFollowingModel::Krauss)
+                } else {
+                    Some(CarFollowingModel::Idm)
+                }
+            }
+            VehicleType::Pedestrian => None,
+        };
+
+        let jitter_x = self.rng.gen_range(-5.0..5.0);
+        let jitter_y = self.rng.gen_range(-5.0..5.0);
+        let path_u32: Vec<u32> = path.iter().map(|n| n.index() as u32).collect();
+        let base = (
+            Position {
+                x: start_pos[0] + jitter_x,
+                y: start_pos[1] + jitter_y,
+            },
+            Kinematics {
+                vx: heading.cos() * 0.1,
+                vy: heading.sin() * 0.1,
+                speed: 0.1,
+                heading,
+            },
+            vtype,
+            RoadPosition {
+                edge_index: edge_idx,
+                lane: 0,
+                offset_m: 0.0,
+            },
+            Route {
+                path: path_u32,
+                current_step: 1,
+            },
+            WaitState {
+                stopped_since: -1.0,
+                at_red_signal: false,
+            },
+            idm_params,
+        );
+
+        if vtype == VehicleType::Motorbike || vtype == VehicleType::Bicycle {
+            let edge = EdgeIndex::new(edge_idx as usize);
+            let lane_count = g
+                .edge_weight(edge)
+                .map(|e| e.lane_count as f64)
+                .unwrap_or(2.0);
+            let road_width = lane_count * 3.5;
+            let half_width = 0.25;
+            let min_lat = half_width;
+            let max_lat = road_width - half_width;
+            let initial_lateral = self.rng.gen_range(min_lat..=max_lat);
+            self.world.spawn((
+                base.0, base.1, base.2, base.3, base.4, base.5, base.6,
+                cf_model.unwrap(),
+                LateralOffset {
+                    lateral_offset: initial_lateral,
+                    desired_lateral: initial_lateral,
+                },
+                req.profile,
+            ));
+        } else if let Some(cf) = cf_model {
+            let initial_lateral = 1.75;
+            self.world.spawn((
+                base.0, base.1, base.2, base.3, base.4, base.5, base.6,
+                cf,
+                LateralOffset {
+                    lateral_offset: initial_lateral,
+                    desired_lateral: initial_lateral,
+                },
+                req.profile,
+            ));
+        }
     }
 
     fn spawn_single_agent(&mut self, req: &velos_demand::SpawnRequest) {

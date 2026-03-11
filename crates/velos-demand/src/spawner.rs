@@ -88,6 +88,11 @@ impl Spawner {
         }
     }
 
+    /// Access the profile distribution for external spawn logic.
+    pub fn profile_dist(&self) -> &ProfileDistribution {
+        &self.profile_dist
+    }
+
     /// Create a spawner with a custom profile distribution.
     pub fn with_profile_distribution(mut self, dist: ProfileDistribution) -> Self {
         self.profile_dist = dist;
