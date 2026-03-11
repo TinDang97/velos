@@ -27,6 +27,35 @@ use crate::{
     sim::SimWorld,
 };
 
+/// Compute bounding box of the road network in lat/lon with padding (metres).
+///
+/// Returns `Some((min_lat, min_lon, max_lat, max_lon))` or `None` if no nodes.
+fn compute_network_bbox(
+    graph: &velos_net::RoadGraph,
+    padding_m: f64,
+    proj: &velos_net::EquirectangularProjection,
+) -> Option<(f64, f64, f64, f64)> {
+    let g = graph.inner();
+    if g.node_count() == 0 {
+        return None;
+    }
+    let mut min_x = f64::MAX;
+    let mut max_x = f64::MIN;
+    let mut min_y = f64::MAX;
+    let mut max_y = f64::MIN;
+    for node in g.node_indices() {
+        let pos = g[node].pos;
+        min_x = min_x.min(pos[0]);
+        max_x = max_x.max(pos[0]);
+        min_y = min_y.min(pos[1]);
+        max_y = max_y.max(pos[1]);
+    }
+    // Apply padding in projected coords and unproject to lat/lon
+    let (min_lat, min_lon) = proj.unproject(min_x - padding_m, min_y - padding_m);
+    let (max_lat, max_lon) = proj.unproject(max_x + padding_m, max_y + padding_m);
+    Some((min_lat, min_lon, max_lat, max_lon))
+}
+
 /// All GPU, rendering, and simulation state.
 struct GpuState {
     window: Arc<Window>,
@@ -192,6 +221,55 @@ impl GpuState {
         // Upload road geometry to 3D renderer.
         let junction_3d = crate::road_surface::convert_junction_data(&sim.junction_data);
         renderer_3d.upload_road_geometry(&device, &sim.road_graph, &junction_3d);
+
+        // Load building footprints from OSM PBF (reuse same file as road import).
+        {
+            let proj = velos_net::EquirectangularProjection::new(10.7756, 106.7019);
+            match velos_net::import_buildings(pbf_path, &proj) {
+                Ok(buildings) => {
+                    log::info!("Imported {} building footprints", buildings.len());
+                    renderer_3d.upload_building_geometry(&device, &buildings);
+                }
+                Err(e) => {
+                    log::warn!("Failed to import buildings: {e}. Skipping building rendering.");
+                }
+            }
+        }
+
+        // Load terrain from SRTM .hgt file.
+        {
+            let hgt_path = std::path::Path::new("data/hcmc/N10E106.hgt");
+            if hgt_path.exists() {
+                let proj = velos_net::EquirectangularProjection::new(10.7756, 106.7019);
+                match crate::terrain::parse_hgt(hgt_path) {
+                    Ok((elevations, samples)) => {
+                        // Compute bounding box from road network with 500m padding
+                        let bbox = compute_network_bbox(&sim.road_graph, 500.0, &proj);
+                        let (terrain_verts, terrain_indices) =
+                            crate::terrain::generate_terrain_mesh(
+                                &elevations,
+                                samples,
+                                10.0,   // N10E106: SW corner lat
+                                106.0,  // N10E106: SW corner lon
+                                &proj,
+                                bbox,
+                            );
+                        log::info!(
+                            "Loaded terrain: {} vertices, {} indices",
+                            terrain_verts.len(),
+                            terrain_indices.len()
+                        );
+                        renderer_3d
+                            .upload_terrain_geometry(&device, &terrain_verts, &terrain_indices);
+                    }
+                    Err(e) => {
+                        log::warn!("Failed to parse SRTM DEM: {e}. Using flat ground plane.");
+                    }
+                }
+            } else {
+                log::info!("No SRTM DEM file at {:?}. Using flat ground plane.", hgt_path);
+            }
+        }
 
         let road_lines = sim.road_edge_lines();
         let (cx, cy) = sim.network_center();
