@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Digital Twin
 status: completed
-stopped_at: Phase 19 context gathered
-last_updated: "2026-03-11T04:52:31.517Z"
+stopped_at: Completed 19-02-PLAN.md
+last_updated: "2026-03-11T05:30:01.897Z"
 last_activity: 2026-03-11 -- Phase 18 Plan 04 complete (view toggle wiring, orbit camera, render dispatch, visual verification)
 progress:
   total_phases: 5
   completed_phases: 3
-  total_plans: 12
-  completed_plans: 12
+  total_plans: 15
+  completed_plans: 13
   percent: 100
 ---
 
@@ -92,6 +92,8 @@ Recent decisions affecting current work:
 - [Phase 18]: Reverse-Z depth buffer with infinite far plane eliminates z-fighting on overlapping road layers
 - [Phase 18]: Right-drag pan for Mac trackpad ergonomics (two-finger click+drag as middle-drag alternative)
 - [Phase 18]: Y layer separation increased 10x (junction 0.05, marking 0.1) for reliable depth ordering at oblique angles
+- [Phase 19]: Manual SRTM .hgt parsing over external crate -- format is trivially simple
+- [Phase 19]: Terrain Y clamped to -0.5 to stay below road surface at Y=0
 
 ### Pending Todos
 
@@ -105,6 +107,6 @@ Recent decisions affecting current work:
 
 ## Session Continuity
 
-Last session: 2026-03-11T04:52:31.515Z
-Stopped at: Phase 19 context gathered
-Resume file: .planning/phases/19-3d-city-scene/19-CONTEXT.md
+Last session: 2026-03-11T05:30:01.895Z
+Stopped at: Completed 19-02-PLAN.md
+Resume file: None
