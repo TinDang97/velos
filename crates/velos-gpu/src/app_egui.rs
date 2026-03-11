@@ -201,26 +201,32 @@ fn draw_calibration_panel(ui: &mut egui::Ui, sim: &mut SimWorld, _grpc_addr: &st
                 ui.small("Obs");
                 ui.small("Sim");
                 ui.small("Ratio");
+                ui.small("Status");
                 ui.end_row();
 
                 for (name, obs, sim_count, ratio, stale) in &camera_data {
                     let short_name = if name.len() > 8 {
-                        format!("{}…", &name[..7])
+                        format!("{}...", &name[..7])
                     } else {
                         name.clone()
                     };
                     ui.small(&short_name);
                     ui.small(format!("{obs}"));
                     ui.small(format!("{sim_count}"));
+                    ui.small(format!("{ratio:.2}"));
 
-                    let cam_color = if *stale == 0 {
-                        egui::Color32::from_rgb(0, 200, 0)
+                    let (status_text, cam_color) = if *stale == 0 {
+                        ("Live", egui::Color32::from_rgb(0, 200, 0))
                     } else if *stale < 3 {
-                        egui::Color32::from_rgb(230, 200, 0)
+                        ("Stale", egui::Color32::from_rgb(230, 200, 0))
                     } else {
-                        egui::Color32::from_rgb(230, 130, 0)
+                        ("Decaying", egui::Color32::from_rgb(230, 130, 0))
                     };
-                    ui.colored_label(cam_color, format!("{ratio:.2}"));
+                    if *stale > 0 && *stale < 3 {
+                        ui.colored_label(cam_color, format!("Stale({stale})"));
+                    } else {
+                        ui.colored_label(cam_color, status_text);
+                    }
                     ui.end_row();
                 }
             });
