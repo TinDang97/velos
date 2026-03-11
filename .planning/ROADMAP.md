@@ -107,7 +107,11 @@ Plans:
   1. OSM building footprints render as extruded 3D volumes with height derived from building:levels tag
   2. Ground surface renders from SRTM DEM heightmap data as a terrain mesh with elevation variation
   3. Buildings and terrain integrate with the existing 3D scene (correct depth, lighting, and camera interaction -- no z-fighting)
-**Plans**: [To be planned]
+**Plans**: 3 plans
+Plans:
+- [ ] 19-01-PLAN.md — Building footprint extraction from OSM and extrusion geometry generation
+- [ ] 19-02-PLAN.md — SRTM DEM terrain parsing and mesh generation
+- [ ] 19-03-PLAN.md — Renderer3D integration, app wiring, LOD, and visual verification
 
 ### Phase 20: Real-Time Calibration
 **Goal**: Simulation demand continuously self-corrects from streaming detection data without requiring restart
@@ -142,10 +146,10 @@ Phase 16 first (foundation). Phases 17 + 18 in parallel after 16. Phase 19 after
 | 15. File Size Reduction & Housekeeping | v1.1 | 3/3 | Complete | 2026-03-08 |
 | 16. Intersection Sublane Model | v1.2 | 4/4 | Complete | 2026-03-09 |
 | 17. Detection Ingestion & Demand Calibration | v1.2 | 4/4 | Complete | 2026-03-10 |
-| 18. 3D Rendering Core | 4/4 | Complete    | 2026-03-11 | 2026-03-11 |
-| 19. 3D City Scene | v1.2 | 0/? | Not started | - |
+| 18. 3D Rendering Core | v1.2 | 4/4 | Complete | 2026-03-11 |
+| 19. 3D City Scene | v1.2 | 0/3 | Planned | - |
 | 20. Real-Time Calibration | v1.2 | 0/? | Not started | - |
 
 ---
 *Roadmap created: 2026-03-09*
-*Last updated: 2026-03-10 (Phase 18 plans created)*
+*Last updated: 2026-03-11 (Phase 19 plans created)*
